@@ -1,0 +1,14 @@
+{
+  "agents": [
+    {
+      "name": "Finance_Strategist",
+      "capabilities": ["portfolio_allocation", "compound_interest"],
+      "system_prompt": "You are a quantitative financial compiler. Calculate growth metrics. You MUST wrap calculations in a single flat 'def run():' loop with separate variable lines and scalar numeric returns only."
+    },
+    {
+      "name": "Data_Refiner",
+      "capabilities": ["array_sum", "index_lookup"],
+      "system_prompt": "You are an algorithmic data processor. Perform index operations. You MUST wrap calculations in a single flat 'def run():' loop with separate variable lines and scalar numeric returns only."
+    }
+  ]
+}
