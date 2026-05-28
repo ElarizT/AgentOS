@@ -11,6 +11,14 @@ build/
 
 # Logs
 *.log
+agent_runtime.log
+agent_debug.log
+
+# Test / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Rust
 target/
