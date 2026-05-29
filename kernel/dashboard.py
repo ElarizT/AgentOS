@@ -159,7 +159,9 @@ class AgentOSDashboard(App[None]):
         table.add_columns("Agent Name", "Queue Depth", "Routing Method")
         process_table = self.query_one("#process-table", DataTable)
         process_table.cursor_type = "row"
-        process_table.add_columns("PID", "Name", "Status", "Mode", "Uptime", "Tokens", "Mailbox", "IPC")
+        process_table.add_columns(
+            "PID", "Name", "Status", "Mode", "Parent", "Kids", "Restarts", "Strategy", "Mailbox", "IPC"
+        )
         self.set_interval(0.1, self.refresh_metrics)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -296,14 +298,17 @@ class AgentOSDashboard(App[None]):
                 "crashed": "bold red",
                 "exited": "dim",
             }.get(status, "white")
-            uptime = float(row.get("uptime_seconds", 0.0))
+            depth = int(row.get("tree_depth", 0))
+            display_name = f"{'  ' * depth}{row.get('name', '')}"
             table.add_row(
                 str(row.get("pid", "")),
-                str(row.get("name", "")),
+                display_name,
                 Text(status, style=status_style),
                 str(row.get("execution_mode", "")),
-                f"{uptime:0.1f}s",
-                str(row.get("memory_tokens", 0)),
+                "" if row.get("parent_pid") is None else str(row.get("parent_pid")),
+                str(row.get("child_count", 0)),
+                str(row.get("restart_count", 0)),
+                str(row.get("supervisor_strategy", "")),
                 f"{row.get('mailbox_depth', 0)}/{row.get('mailbox_size', 0)}",
                 f"{row.get('messages_sent', 0)}/{row.get('messages_received', 0)}/{row.get('message_errors', 0)}",
             )

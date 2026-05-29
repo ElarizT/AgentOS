@@ -96,6 +96,10 @@ def run_child(
                 "mailbox_size": int(getattr(process, "mailbox_size", 1024) or 1024),
                 "token_budget": int(getattr(process, "token_budget", 8000) or 8000),
                 "capabilities": list(getattr(process, "capabilities", ()) or ()),
+                "supervisor_strategy": str(getattr(process, "supervisor_strategy", "one_for_one")),
+                "max_restarts": int(getattr(process, "max_restarts", 3) or 3),
+                "restart_window_seconds": float(getattr(process, "restart_window_seconds", 60.0) or 60.0),
+                "restart_backoff_seconds": float(getattr(process, "restart_backoff_seconds", 0.0) or 0.0),
             }
         )
         asyncio.run(process.run())

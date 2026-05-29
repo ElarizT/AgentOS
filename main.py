@@ -604,15 +604,20 @@ async def main() -> None:
             rows = await process_registry.list_processes()
             if not rows:
                 return "no active agent processes"
-            lines = ["PID   NAME                 STATUS     MODE        UPTIME  TOKENS  MAILBOX    IPC S/R/E"]
+            lines = ["PID   NAME                 STATUS     MODE        PPID  KIDS  RST  STRATEGY      MAILBOX    IPC S/R/E"]
             for row in rows:
+                depth = int(row.get("tree_depth", 0))
+                display_name = f"{'  ' * depth}{row['name'][:20]}"
+                parent_pid = "" if row.get("parent_pid") is None else str(row.get("parent_pid"))
                 lines.append(
                     f"{row['pid']:<5} "
-                    f"{row['name'][:20]:<20} "
+                    f"{display_name:<20} "
                     f"{row['status']:<10} "
                     f"{row['execution_mode']:<11} "
-                    f"{row['uptime_seconds']:>5.1f}s "
-                    f"{row['memory_tokens']:>6} "
+                    f"{parent_pid:<5} "
+                    f"{row.get('child_count', 0):>4} "
+                    f"{row.get('restart_count', 0):>3} "
+                    f"{row.get('supervisor_strategy', ''):<13} "
                     f"{row['mailbox_depth']}/{row['mailbox_size']:<9} "
                     f"{row.get('messages_sent', 0)}/{row.get('messages_received', 0)}/{row.get('message_errors', 0)}"
                 )
