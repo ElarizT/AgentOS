@@ -54,6 +54,18 @@ def test_recall_by_tag_and_substring(tmp_path) -> None:
     assert memory.recall("Agent", query="ocean")[0]["content"]["note"] == "beta ocean"
 
 
+def test_recall_is_scoped_to_agent(tmp_path) -> None:
+    memory = PersistentMemoryManager(tmp_path / "memory")
+    memory.register_agent("Alpha", 5)
+    memory.register_agent("Beta", 5)
+    memory.append_context_frame("Alpha", {"note": "alpha secret"}, 6, tags=["shared"])
+    memory.append_context_frame("Beta", {"note": "beta secret"}, 6, tags=["shared"])
+
+    recalled = memory.recall("Alpha", tags=["shared"])
+
+    assert [record["content"]["note"] for record in recalled] == ["alpha secret"]
+
+
 def test_forget_memory(tmp_path) -> None:
     memory = PersistentMemoryManager(tmp_path / "memory")
     memory.register_agent("Agent", 5)

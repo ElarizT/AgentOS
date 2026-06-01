@@ -75,6 +75,27 @@ $env:PYO3_PYTHON = ".\.venv\Scripts\python.exe"
 cargo check
 ```
 
+## Self-Healing Multi-Agent Demo
+
+Start the dashboard with `python main.py`, then run:
+
+```text
+run examples/agent_os_demo_supervisor.py
+ps
+```
+
+The demo supervisor launches a coordinator, a persistent-memory agent, an
+isolated worker, and an isolated crash probe. The coordinator exercises
+structured request/reply IPC, records recalled cold memory, intentionally
+crashes the probe, and verifies the restarted replacement. Keep the dashboard
+open to watch child PIDs, restart counts, mailbox counters, and paged memory.
+
+For a finite headless smoke run that prints the same telemetry as JSON:
+
+```powershell
+python -m examples.run_agent_os_demo
+```
+
 ## Notes
 
 - Runtime behavior is configurable through environment variables used in `main.py`.

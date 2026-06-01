@@ -31,6 +31,7 @@ stats = self.memory_stats()
 
 The retrieval policy is deterministic:
 
+- process-local scope (`agent_name`)
 - tag filter
 - substring filter
 - importance descending

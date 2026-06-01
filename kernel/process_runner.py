@@ -60,9 +60,16 @@ class IsolatedMemory:
     def __init__(self) -> None:
         self.active_tokens = 0
 
-    def append_context_frame(self, _agent_name: str, content: str, token_estimate: int) -> None:
-        json.loads(content)
+    def append_context_frame(
+        self,
+        _agent_name: str,
+        content: Any,
+        token_estimate: int,
+        **_metadata: Any,
+    ) -> bool:
+        json.dumps(content)
         self.active_tokens += max(int(token_estimate), 1)
+        return False
 
 
 def run_child(

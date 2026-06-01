@@ -180,9 +180,11 @@ class PersistentMemoryManager:
         candidates_by_id: dict[str, MemoryRecord] = {}
         for state in self._agents.values():
             for record in [*state.hot, *state.warm]:
-                candidates_by_id.setdefault(record.memory_id, record)
+                if record.process_name == agent_name:
+                    candidates_by_id.setdefault(record.memory_id, record)
         for record in self._cold_index.values():
-            candidates_by_id.setdefault(record.memory_id, record)
+            if record.process_name == agent_name:
+                candidates_by_id.setdefault(record.memory_id, record)
         candidates = list(candidates_by_id.values())
 
         def matches(record: MemoryRecord) -> bool:
