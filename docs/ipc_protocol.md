@@ -36,6 +36,8 @@ Priorities are `low`, `normal`, `high`, and `critical`.
 Agent authors use `AgentProcess` helpers:
 
 ```python
+from agentos import AgentProcess
+
 self.send(target_pid, {"cmd": "ping"})
 message = await self.receive(timeout=1.0)
 response = await self.request(target_pid, {"ping": True}, timeout=2.0)

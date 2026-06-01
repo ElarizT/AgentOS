@@ -20,7 +20,8 @@ flowchart TD
         APP --> DASH["kernel/dashboard.py<br/>Textual dashboard and shell"]
         APP --> REG["kernel/process.py<br/>ProcessRegistry"]
         APP --> PMEM["kernel/memory_store.py<br/>PersistentMemoryManager"]
-        REG --> SDK["kernel/process.py<br/>AgentProcess SDK"]
+        SDK["agentos/__init__.py<br/>Stable public SDK facade"] --> ASDK["kernel/process.py<br/>AgentProcess SDK"]
+        REG --> ASDK
         REG --> PROTO["kernel/ipc_protocol.py<br/>Validated IPC envelopes"]
         REG --> RUNNER["kernel/process_runner.py<br/>Isolated child runner"]
         APP -. optional .-> LLM["kernel/llm.py<br/>AsyncLLMManager"]
@@ -446,6 +447,8 @@ flowchart TD
     MAIN --> CORE["agent_os_core PyO3 module"]
 
     PROC --> PROTO["kernel/ipc_protocol.py"]
+    SDK["agentos/__init__.py"] --> PROC
+    SDK --> PROTO
     PROC --> RUNNER["kernel/process_runner.py"]
     PROC --> CORE
     DASH --> CORE
@@ -464,6 +467,7 @@ flowchart TD
 
 | File | Depends on | Responsibility |
 | --- | --- | --- |
+| `agentos/__init__.py` | `kernel.process`, `kernel.ipc_protocol` | Stable public SDK facade for agent authors |
 | `main.py` | `agent_os_core`, `kernel.dashboard`, `kernel.memory_store`, `kernel.process` | Runtime composition, shell commands, optional legacy orchestration |
 | `kernel/process.py` | `kernel.ipc_protocol`, native `AgentMessage` | Agent SDK, process registry, isolation bridge, supervision, process telemetry |
 | `kernel/process_runner.py` | `kernel.process` | Spawned child bootstrap and queue-backed adapters |

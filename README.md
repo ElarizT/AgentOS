@@ -18,6 +18,7 @@ A lightweight hybrid runtime that combines:
 
 ## Documentation
 
+- `docs/sdk_quickstart.md` is the 15-minute developer guide for writing agents.
 - `docs/interactive_shell.md` covers the process shell and isolation modes.
 - `docs/ipc_protocol.md` covers the structured Agent-to-Agent IPC protocol.
 - `docs/supervision.md` covers supervisor trees and restart policies.

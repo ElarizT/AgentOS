@@ -30,6 +30,9 @@ Supervisors support:
 Agent classes configure their strategy with:
 
 ```python
+from agentos import AgentProcess
+
+
 class Coordinator(AgentProcess):
     supervisor_strategy = "one_for_one"
     max_restarts = 3

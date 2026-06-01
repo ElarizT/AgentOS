@@ -39,7 +39,7 @@ isolation, not a full security sandbox.
 Scripts should define an `AgentProcess` subclass:
 
 ```python
-from kernel.process import AgentProcess
+from agentos import AgentProcess
 
 
 class EchoAgent(AgentProcess):
@@ -50,5 +50,6 @@ class EchoAgent(AgentProcess):
         self.remember({"payload": message.payload}, 3)
 ```
 
-For this MVP, imports are intentionally restricted. The preflight check only
-allows `from kernel.process import AgentProcess` before executing the script.
+Imports are intentionally restricted. New scripts should use
+`from agentos import AgentProcess`. The legacy
+`from kernel.process import AgentProcess` import remains supported.

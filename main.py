@@ -21,6 +21,7 @@ from agent_os_core import (
 from kernel.dashboard import AgentOSDashboard
 from kernel.memory_store import PersistentMemoryManager
 from kernel.process import ProcessRegistry
+from kernel.shell_help import format_shell_help
 
 try:
     from kernel.llm import AsyncLLMManager, LLMConfig, normalize_code_block
@@ -636,17 +637,7 @@ async def main() -> None:
             return f"killed PID {record.pid} ({record.name})"
 
         if verb in {"help", "?"}:
-            return (
-                "commands:\n"
-                "  run <path-to-agent.py>  start an AgentProcess script under "
-                f"{AGENT_PROCESS_ROOT}\n"
-                "  ps                      list process registry status\n"
-                "  kill <PID>              gracefully stop and unregister a process\n"
-                "\n"
-                "execution modes:\n"
-                "  AGENT_OS_PROCESS_ISOLATION=in-process  trusted local mode (default)\n"
-                "  AGENT_OS_PROCESS_ISOLATION=process     spawned child process isolation"
-            )
+            return format_shell_help(AGENT_PROCESS_ROOT)
 
         raise ValueError("unknown command; try: help")
 

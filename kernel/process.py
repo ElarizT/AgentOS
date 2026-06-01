@@ -70,6 +70,25 @@ class RestartPolicy(str, Enum):
     TEMPORARY = "temporary"
 
 
+PUBLIC_AGENTOS_IMPORTS = {
+    "AgentProcess",
+    "ControlMessage",
+    "ErrorMessage",
+    "EventMessage",
+    "ExecutionMode",
+    "HeartbeatMessage",
+    "IPCMessage",
+    "IPCProtocolError",
+    "RestartPolicy",
+    "SupervisorStrategy",
+    "TaskRequest",
+    "TaskResponse",
+    "make_error",
+    "make_message",
+    "parse_message",
+}
+
+
 class AgentProcess:
     """Base class for standalone Agent OS process scripts."""
 
@@ -810,7 +829,10 @@ class ProcessRegistry:
 
         process = self._find_process(module)
         if process is None:
-            raise ValueError("agent script must define an AgentProcess subclass or create_process()")
+            raise ValueError(
+                "agent script must define an AgentProcess subclass, for example: "
+                "class MyAgent(AgentProcess): name = \"MyAgent\""
+            )
         return process
 
     def _validate_allowed_path(self, path: Path) -> None:
@@ -830,13 +852,18 @@ class ProcessRegistry:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 names = ", ".join(alias.name for alias in node.names)
-                raise ValueError(f"agent script import is not allowed: import {names}")
+                raise ValueError(
+                    f"agent script import is not allowed: import {names}. "
+                    "Use 'from agentos import AgentProcess'; additional imports are disabled for agent scripts."
+                )
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 imported_names = {alias.name for alias in node.names}
-                if module != "kernel.process" or imported_names - {"AgentProcess"}:
+                allowed_names = PUBLIC_AGENTOS_IMPORTS if module == "agentos" else {"AgentProcess"}
+                if module not in {"agentos", "kernel.process"} or imported_names - allowed_names:
                     raise ValueError(
-                        f"agent script import is not allowed: from {module} import {', '.join(sorted(imported_names))}"
+                        f"agent script import is not allowed: from {module} import {', '.join(sorted(imported_names))}. "
+                        "Use 'from agentos import AgentProcess'; additional imports are disabled for agent scripts."
                     )
             if isinstance(node, ast.ClassDef):
                 if any(_base_name(base) == "AgentProcess" for base in node.bases):
@@ -845,21 +872,20 @@ class ProcessRegistry:
                 has_process_entry = True
 
         if not has_process_entry:
-            raise ValueError("agent script must define an AgentProcess subclass or create_process()")
+            raise ValueError(
+                "agent script must define an AgentProcess subclass, for example: "
+                "class MyAgent(AgentProcess): name = \"MyAgent\""
+            )
 
     def _validate_process(self, process: AgentProcess, name: str) -> None:
         if not isinstance(process, AgentProcess):
             raise TypeError("loaded object is not an AgentProcess")
-        if not name:
-            raise ValueError("agent process name must not be empty")
+        if not name or name == AgentProcess.name:
+            raise ValueError('agent process must define a unique non-empty name, for example: name = "MyAgent"')
         if any(char in name for char in "\r\n\t/\\"):
             raise ValueError("agent process name contains unsupported characters")
-        mailbox_size = int(getattr(process, "mailbox_size", self.mailbox_size) or self.mailbox_size)
-        token_budget = int(getattr(process, "token_budget", self.token_budget) or self.token_budget)
-        if mailbox_size <= 0:
-            raise ValueError("agent process mailbox_size must be greater than zero")
-        if token_budget <= 0:
-            raise ValueError("agent process token_budget must be greater than zero")
+        mailbox_size = self._positive_int_setting(process, "mailbox_size", self.mailbox_size)
+        token_budget = self._positive_int_setting(process, "token_budget", self.token_budget)
         capabilities = getattr(process, "capabilities", ())
         if isinstance(capabilities, str) or not all(isinstance(item, str) for item in capabilities):
             raise ValueError("agent process capabilities must be an iterable of strings")
@@ -885,8 +911,8 @@ class ProcessRegistry:
         token_budget: int,
         capabilities: tuple[str, ...],
     ) -> None:
-        if not name:
-            raise ValueError("agent process name must not be empty")
+        if not name or name == AgentProcess.name:
+            raise ValueError('agent process must define a unique non-empty name, for example: name = "MyAgent"')
         if any(char in name for char in "\r\n\t/\\"):
             raise ValueError("agent process name contains unsupported characters")
         if mailbox_size <= 0:
@@ -908,6 +934,17 @@ class ProcessRegistry:
     def _normalize_supervisor_strategy(self, strategy: str | SupervisorStrategy) -> SupervisorStrategy:
         value = strategy.value if isinstance(strategy, SupervisorStrategy) else str(strategy)
         return SupervisorStrategy(value)
+
+    @staticmethod
+    def _positive_int_setting(process: AgentProcess, setting: str, default: int) -> int:
+        raw_value = getattr(process, setting, default)
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"agent process {setting} must be a positive integer; got {raw_value!r}") from exc
+        if value <= 0:
+            raise ValueError(f"agent process {setting} must be a positive integer; got {raw_value!r}")
+        return value
 
     def _install_sdk_symbol(self, module: ModuleType) -> None:
         module.AgentProcess = AgentProcess
