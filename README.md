@@ -97,6 +97,18 @@ For a finite headless smoke run that prints the same telemetry as JSON:
 python -m examples.run_agent_os_demo
 ```
 
+## Research Team Demo
+
+Run the deterministic multi-agent research showcase:
+
+```powershell
+python -m examples.research_team.research_team
+```
+
+It demonstrates typed IPC contracts, planner fan-out, research fan-in,
+synthesis, and critic review without API keys or external services. See
+`examples/research_team/README.md` for the architecture and expected output.
+
 ## Notes
 
 - Runtime behavior is configurable through environment variables used in `main.py`.

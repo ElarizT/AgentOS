@@ -1,0 +1,89 @@
+import pytest
+
+from examples.research_team.agents import PlannerAgent, SynthesizerAgent
+from examples.research_team.contracts import ResearchResult
+from examples.research_team.data import BENEFITS, CRITIC_REVIEW, MARKET_TRENDS, RISKS, TOPIC
+from examples.research_team.research_team import run_demo
+
+
+def test_planner_creates_expected_assignments() -> None:
+    assignments = PlannerAgent().create_assignments()
+
+    assert [(item.topic, item.focus_area, item.destination) for item in assignments] == [
+        (TOPIC, "Benefits", "ResearchBenefitsAgent"),
+        (TOPIC, "Risks", "ResearchRisksAgent"),
+        (TOPIC, "Market Trends", "ResearchMarketAgent"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_planner_assignments_are_delivered() -> None:
+    state = await run_demo()
+
+    assert [agent.assignment_received.focus_area for agent in state["research_agents"]] == [
+        "Benefits",
+        "Risks",
+        "Market Trends",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_research_results_are_delivered_to_synthesizer() -> None:
+    state = await run_demo()
+
+    assert {
+        focus_area: result.findings
+        for focus_area, result in state["synthesizer"].results.items()
+    } == {
+        "Benefits": BENEFITS,
+        "Risks": RISKS,
+        "Market Trends": MARKET_TRENDS,
+    }
+
+
+def test_synthesizer_waits_for_all_required_results() -> None:
+    synthesizer = SynthesizerAgent()
+    synthesizer.results["Benefits"] = ResearchResult("Benefits", BENEFITS)
+    synthesizer.results["Risks"] = ResearchResult("Risks", RISKS)
+
+    assert synthesizer.create_report() is None
+
+
+@pytest.mark.asyncio
+async def test_synthesized_report_is_delivered_to_critic() -> None:
+    state = await run_demo()
+
+    assert state["synthesizer"].report_sent == state["critic"].report_received
+    assert state["critic"].report_received.topic == TOPIC
+    assert state["critic"].report_received.benefits == BENEFITS
+    assert state["critic"].report_received.risks == RISKS
+    assert state["critic"].report_received.market == MARKET_TRENDS
+    assert state["critic"].report_received.summary == (
+        "AI in healthcare is progressing rapidly, with strong potential benefits, "
+        "meaningful risks, and growing market adoption."
+    )
+
+
+@pytest.mark.asyncio
+async def test_critic_generates_expected_review() -> None:
+    state = await run_demo()
+
+    assert state["critic_review"] == CRITIC_REVIEW
+    assert state["critic_review"].score == 8.7
+    assert state["critic_review"].strengths == CRITIC_REVIEW.strengths
+    assert state["critic_review"].weaknesses == CRITIC_REVIEW.weaknesses
+    assert state["critic_review"].final_note == CRITIC_REVIEW.final_note
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_returns_major_artifacts() -> None:
+    state = await run_demo()
+
+    assert [assignment.focus_area for assignment in state["assignments"]] == [
+        "Benefits",
+        "Risks",
+        "Market Trends",
+    ]
+    assert set(state["research_results"]) == {"Benefits", "Risks", "Market Trends"}
+    assert state["synthesized_report"] == state["synthesizer"].report_sent
+    assert state["critic_review"] == state["critic"].review
