@@ -4,6 +4,15 @@ from examples.research_team.agents import PlannerAgent, SynthesizerAgent
 from examples.research_team.contracts import ResearchResult
 from examples.research_team.data import BENEFITS, CRITIC_REVIEW, MARKET_TRENDS, RISKS, TOPIC
 from examples.research_team.research_team import run_demo
+from kernel.dashboard import SHELL_PROMPT, AgentOSDashboard
+
+
+class EmptyTelemetry:
+    pass
+
+
+def test_dashboard_uses_branded_shell_prompt() -> None:
+    assert SHELL_PROMPT == "AgentOS>"
 
 
 def test_planner_creates_expected_assignments() -> None:
@@ -87,3 +96,32 @@ async def test_full_workflow_returns_major_artifacts() -> None:
     assert set(state["research_results"]) == {"Benefits", "Risks", "Market Trends"}
     assert state["synthesized_report"] == state["synthesizer"].report_sent
     assert state["critic_review"] == state["critic"].review
+
+
+@pytest.mark.asyncio
+async def test_dashboard_snapshot_shows_completed_research_team_workflow() -> None:
+    state = await run_demo()
+    dashboard = AgentOSDashboard(
+        kernel=EmptyTelemetry(),
+        bus=EmptyTelemetry(),
+        memory=EmptyTelemetry(),
+        sandbox=EmptyTelemetry(),
+    )
+
+    dashboard.load_research_team_snapshot(state)
+
+    assert dashboard._demo_status == "Workflow Complete  Final Score: 8.7/10"
+    assert [row["name"] for row in dashboard._demo_process_rows] == [
+        "PlannerAgent",
+        "ResearchBenefitsAgent",
+        "ResearchRisksAgent",
+        "ResearchMarketAgent",
+        "SynthesizerAgent",
+        "CriticAgent",
+    ]
+    assert [(metric.agent_name, metric.queue_depth) for metric in dashboard._demo_mailboxes] == [
+        ("PlannerAgent", 3),
+        ("ResearchAgents", 3),
+        ("SynthesizerAgent", 1),
+        ("CriticAgent", 1),
+    ]

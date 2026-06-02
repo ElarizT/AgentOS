@@ -60,6 +60,7 @@ def test_shell_help_includes_quickstart_commands(tmp_path) -> None:
     assert "AGENT_OS_PROCESS_ISOLATION=in-process" in help_text
     assert "AGENT_OS_PROCESS_ISOLATION=process" in help_text
     assert "run examples/hello_agent.py" in help_text
+    assert "run examples/research_team" in help_text
     assert "docs/sdk_quickstart.md" in help_text
 
 

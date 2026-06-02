@@ -10,6 +10,8 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
 from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
 
+SHELL_PROMPT = "AgentOS>"
+
 
 @dataclass
 class MailboxMetric:
@@ -133,6 +135,40 @@ class AgentOSDashboard(App[None]):
         self._last_pending_evictions: dict[str, int] = {}
         self._logged_wasm_runs = 0
         self._process_rows: list[dict[str, Any]] = []
+        self._demo_mailboxes: list[MailboxMetric] | None = None
+        self._demo_process_rows: list[dict[str, Any]] | None = None
+        self._demo_status: str | None = None
+        self._wasm_placeholder_logged = False
+
+    def load_research_team_snapshot(self, state: dict[str, Any]) -> None:
+        review = state["critic_review"]
+        self._demo_status = f"Workflow Complete  Final Score: {review.score}/10"
+        self._demo_mailboxes = [
+            MailboxMetric("PlannerAgent", 3, 3, "Assignments Sent"),
+            MailboxMetric("ResearchAgents", 3, 3, "Results Sent"),
+            MailboxMetric("SynthesizerAgent", 1, 1, "Report Sent"),
+            MailboxMetric("CriticAgent", 1, 1, "Review Complete"),
+        ]
+        names = [
+            "PlannerAgent",
+            "ResearchBenefitsAgent",
+            "ResearchRisksAgent",
+            "ResearchMarketAgent",
+            "SynthesizerAgent",
+            "CriticAgent",
+        ]
+        self._demo_process_rows = [
+            {
+                "pid": 100 + index,
+                "name": name,
+                "status": "exited",
+                "execution_mode": "demo",
+                "messages_sent": (3, 1, 1, 1, 1, 1)[index],
+                "messages_received": (0, 1, 1, 1, 3, 1)[index],
+                "message_errors": 0,
+            }
+            for index, name in enumerate(names)
+        ]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -150,7 +186,7 @@ class AgentOSDashboard(App[None]):
             with Vertical(id="process-pane", classes="pane"):
                 yield Static("Process Registry", classes="pane-title")
                 yield DataTable(id="process-table")
-        yield Input(placeholder="agent-os> run <path> | ps | kill <PID>", id="shell-input")
+        yield Input(placeholder=f"{SHELL_PROMPT} run <path> | ps | kill <PID>", id="shell-input")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -170,7 +206,7 @@ class AgentOSDashboard(App[None]):
         if not command:
             return
         log = self.query_one("#wasm-log", RichLog)
-        log.write(f"[bold #8bd5ff]agent-os>[/] {command}")
+        log.write(f"[bold #8bd5ff]{SHELL_PROMPT}[/] {command}")
 
         if self.command_handler is None:
             log.write("[yellow]No command handler is attached.[/]")
@@ -199,6 +235,10 @@ class AgentOSDashboard(App[None]):
         self.run_worker(self._refresh_process_rows(), exclusive=True, group="process-refresh")
 
     async def _refresh_process_rows(self) -> None:
+        if self._demo_process_rows is not None:
+            self._process_rows = self._demo_process_rows
+            self._render_processes(self._process_rows)
+            return
         if self.process_snapshot is None:
             self._process_rows = []
             self._render_processes([])
@@ -217,14 +257,19 @@ class AgentOSDashboard(App[None]):
         self._heartbeat_index = (self._heartbeat_index + 1) % len(heartbeats)
         heartbeat = heartbeats[self._heartbeat_index]
 
-        total_agents = self._safe_call(self.kernel, "total_registered_agents", default=len(mailboxes))
+        total_agents = (
+            len(self._demo_process_rows)
+            if self._demo_process_rows is not None
+            else self._safe_call(self.kernel, "total_registered_agents", default=len(mailboxes))
+        )
         active_tokens = self._safe_call(self.memory, "get_global_active_token_count", default=0)
 
         self.query_one("#status-bar", Static).update(
             f"[bold #8bd5ff]Agent OS[/]  "
             f"Agents: [bold]{total_agents}[/]  "
             f"Active Tokens: [bold]{active_tokens}[/]  "
-            f"Health: [bold #8cffb5]{heartbeat} ONLINE[/]"
+            f"Health: [bold #8cffb5]{heartbeat} ONLINE[/]  "
+            f"{'[bold #8cffb5]' + self._demo_status + '[/]' if self._demo_status else ''}"
         )
 
     def _render_mailboxes(self, mailboxes: list[MailboxMetric]) -> None:
@@ -274,6 +319,9 @@ class AgentOSDashboard(App[None]):
 
     def _render_wasm_log(self, runs: list[WasmRunMetric]) -> None:
         log = self.query_one("#wasm-log", RichLog)
+        if not runs and not self._wasm_placeholder_logged:
+            log.write("[dim]Sandboxes Active: 0 | Executions: 0 | Isolation: Ready[/]")
+            self._wasm_placeholder_logged = True
         for run in runs[self._logged_wasm_runs :]:
             status = "[green]Success[/]" if run.success else "[bold dark_red]Trapped[/]"
             error = ""
@@ -314,6 +362,8 @@ class AgentOSDashboard(App[None]):
             )
 
     def _read_mailboxes(self) -> list[MailboxMetric]:
+        if self._demo_mailboxes is not None:
+            return self._demo_mailboxes
         raw_metrics = self._safe_call(self.bus, "get_mailbox_metrics", default=[])
         metrics: list[MailboxMetric] = []
         for raw in raw_metrics:

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import signal
@@ -18,7 +19,7 @@ from agent_os_core import (
     RustKernel,
     WasmSandboxManager,
 )
-from kernel.dashboard import AgentOSDashboard
+from kernel.dashboard import SHELL_PROMPT, AgentOSDashboard
 from kernel.memory_store import PersistentMemoryManager
 from kernel.process import ProcessRegistry
 from kernel.shell_help import format_shell_help
@@ -500,7 +501,7 @@ async def optional_stdin_ingress(bus: NativeIPCBus, stop_event: asyncio.Event) -
 
     while not stop_event.is_set():
         try:
-            line = await asyncio.to_thread(input, "agent-os> ")
+            line = await asyncio.to_thread(input, f"{SHELL_PROMPT} ")
         except (EOFError, KeyboardInterrupt):
             stop_event.set()
             return
@@ -586,6 +587,7 @@ async def main() -> None:
         execution_mode="isolated" if AGENT_PROCESS_ISOLATION == "process" else "in-process",
         startup_timeout_seconds=AGENT_PROCESS_STARTUP_TIMEOUT,
     )
+    app: AgentOSDashboard
 
     async def handle_shell_command(command: str) -> str:
         try:
@@ -600,6 +602,13 @@ async def main() -> None:
         if verb == "run":
             if len(parts) != 2:
                 raise ValueError("usage: run <path-to-agent.py>")
+            if argument.replace("\\", "/").rstrip("/") == "examples/research_team":
+                from examples.research_team.research_team import run_demo
+
+                with contextlib.redirect_stdout(io.StringIO()):
+                    state = await run_demo()
+                app.load_research_team_snapshot(state)
+                return "Research Team demo loaded: Workflow Complete | Final Score: 8.7/10"
             record = await process_registry.run_path(argument)
             return f"started PID {record.pid} ({record.name}) from {record.path}"
 

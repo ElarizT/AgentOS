@@ -16,6 +16,7 @@ def format_shell_help(process_root: Path) -> str:
         "  run examples/hello_agent.py\n"
         "  run examples/memory_agent.py\n"
         "  run examples/supervisor_quickstart.py\n"
+        "  run examples/research_team\n"
         "\n"
         "execution mode:\n"
         "  AGENT_OS_PROCESS_ISOLATION=in-process  trusted local mode (default)\n"
