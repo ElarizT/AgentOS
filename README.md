@@ -1,4 +1,4 @@
-# Agent OS
+# Synapse OS
 Python 3.14 | Rust Core | 83+ Tests Passing | Active Development
 
 An experimental runtime for hierarchical multi-agent systems featuring supervision, IPC, memory paging, fault tolerance, and an interactive dashboard.
