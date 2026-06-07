@@ -201,6 +201,7 @@ async def test_dashboard_tree_panel_has_room_for_rendered_hierarchy() -> None:
 
         tree = AgentOSDashboard._format_agent_tree(dashboard._demo_hierarchy)
         tree_widget = dashboard.query_one("#agent-tree")
+        rendered_tree = str(tree_widget.render())
 
         assert tree_widget.size.height >= len(tree.splitlines())
         for name in [
@@ -212,4 +213,4 @@ async def test_dashboard_tree_panel_has_room_for_rendered_hierarchy() -> None:
             "SynthesizerAgent",
             "CriticAgent",
         ]:
-            assert name in str(tree_widget.content)
+            assert name in rendered_tree
