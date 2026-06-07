@@ -22,7 +22,12 @@ from agent_os_core import (
 from kernel.dashboard import SHELL_PROMPT, AgentOSDashboard
 from kernel.memory_store import PersistentMemoryManager
 from kernel.process import ProcessRegistry
-from kernel.shell_help import format_shell_help
+from kernel.shell_help import (
+    DEMO_COMMANDS,
+    format_demo_browser,
+    format_shell_help,
+    is_supervisor_recovery_demo_path,
+)
 
 try:
     from kernel.llm import AsyncLLMManager, LLMConfig, normalize_code_block
@@ -602,13 +607,19 @@ async def main() -> None:
         if verb == "run":
             if len(parts) != 2:
                 raise ValueError("usage: run <path-to-agent.py>")
-            if argument.replace("\\", "/").rstrip("/") == "examples/research_team":
+            normalized_argument = argument.replace("\\", "/").rstrip("/")
+            if normalized_argument == "examples/research_team":
                 from examples.research_team.research_team import run_demo
 
                 with contextlib.redirect_stdout(io.StringIO()):
                     state = await run_demo()
                 app.load_research_team_snapshot(state)
                 return "Research Team demo loaded: Workflow Complete | Final Score: 8.7/10"
+            if is_supervisor_recovery_demo_path(argument):
+                from demos.supervisor_recovery import build_demo_snapshot
+
+                app.load_supervisor_recovery_snapshot(build_demo_snapshot())
+                return "Supervisor Recovery demo loaded: Recovery Complete"
             record = await process_registry.run_path(argument)
             return f"started PID {record.pid} ({record.name}) from {record.path}"
 
@@ -644,6 +655,11 @@ async def main() -> None:
                 raise ValueError("PID must be an integer") from exc
             record = await process_registry.kill(pid)
             return f"killed PID {record.pid} ({record.name})"
+
+        if verb in DEMO_COMMANDS:
+            if len(parts) != 1:
+                raise ValueError(f"usage: {verb}")
+            return format_demo_browser()
 
         if verb in {"help", "?"}:
             return format_shell_help(AGENT_PROCESS_ROOT)

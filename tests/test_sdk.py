@@ -5,7 +5,12 @@ import pytest
 from agentos import AgentProcess
 from kernel.process import AgentProcess as KernelAgentProcess
 from kernel.process import ProcessRegistry
-from kernel.shell_help import format_shell_help
+from kernel.shell_help import (
+    DEMO_COMMANDS,
+    SUPERVISOR_RECOVERY_DEMO_PATH,
+    format_demo_browser,
+    format_shell_help,
+)
 from test_process_registry import FakeBus, FakeKernel, FakeMemory
 
 
@@ -56,12 +61,28 @@ def test_shell_help_includes_quickstart_commands(tmp_path) -> None:
     assert "run <path>" in help_text
     assert "ps" in help_text
     assert "kill <PID>" in help_text
+    assert "demos" in help_text
     assert "help" in help_text
     assert "AGENT_OS_PROCESS_ISOLATION=in-process" in help_text
     assert "AGENT_OS_PROCESS_ISOLATION=process" in help_text
     assert "run examples/hello_agent.py" in help_text
     assert "run examples/research_team" in help_text
     assert "docs/sdk_quickstart.md" in help_text
+
+
+def test_demo_browser_lists_research_team_run_command() -> None:
+    output = format_demo_browser()
+
+    assert "Available Demos" in output
+    assert "research_team" in output
+    assert "run examples/research_team" in output
+    assert "supervisor_recovery" in output
+    assert f"run {SUPERVISOR_RECOVERY_DEMO_PATH}" in output
+    assert "automatic restart" in output
+
+
+def test_demo_browser_command_and_alias_are_recognized() -> None:
+    assert {"demo", "demos"} <= DEMO_COMMANDS
 
 
 @pytest.mark.asyncio

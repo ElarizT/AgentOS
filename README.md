@@ -109,6 +109,20 @@ It demonstrates typed IPC contracts, planner fan-out, research fan-in,
 synthesis, and critic review without API keys or external services. See
 `examples/research_team/README.md` for the architecture and expected output.
 
+## Supervisor Recovery Demo
+
+From the Agent OS dashboard shell, run:
+
+```text
+AgentOS> run demos/supervisor_recovery
+```
+
+This deterministic dashboard demo shows basic fault tolerance:
+
+```text
+child termination -> supervisor detection -> automatic restart
+```
+
 ### Agent Tree View
 
 Visualizes supervisor-to-agent relationships for active workflows.

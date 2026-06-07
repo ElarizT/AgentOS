@@ -150,10 +150,13 @@ class AgentOSDashboard(App[None]):
         self._demo_mailboxes: list[MailboxMetric] | None = None
         self._demo_process_rows: list[dict[str, Any]] | None = None
         self._demo_hierarchy: dict[str, Any] | None = None
+        self._demo_supervision_events: list[dict[str, Any]] | None = None
         self._demo_status: str | None = None
         self._wasm_placeholder_logged = False
 
     def load_research_team_snapshot(self, state: dict[str, Any]) -> None:
+        self._logged_supervision_events = 0
+        self._demo_supervision_events = None
         review = state["critic_review"]
         self._demo_status = f"Workflow Complete  Final Score: {review.score}/10"
         self._demo_mailboxes = [
@@ -190,6 +193,17 @@ class AgentOSDashboard(App[None]):
             },
         )
 
+    def load_supervisor_recovery_snapshot(self, state: dict[str, Any]) -> None:
+        self._logged_supervision_events = 0
+        self._demo_status = str(state["status"])
+        self._demo_mailboxes = [
+            MailboxMetric("RecoverySupervisor", 3, 3, "Supervisor Events"),
+            MailboxMetric("RecoveryWorkerAgent", 1, 1, "Restarted"),
+        ]
+        self._demo_process_rows = list(state["process_rows"])
+        self._demo_hierarchy = dict(state["hierarchy"])
+        self._demo_supervision_events = list(state["events"])
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(id="status-bar")
@@ -209,7 +223,7 @@ class AgentOSDashboard(App[None]):
             with Vertical(id="process-pane", classes="pane"):
                 yield Static("Process Registry", classes="pane-title")
                 yield DataTable(id="process-table")
-        yield Input(placeholder=f"{SHELL_PROMPT} run <path> | ps | kill <PID>", id="shell-input")
+        yield Input(placeholder=f"{SHELL_PROMPT} run <path> | demos | ps | kill <PID>", id="shell-input")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -359,9 +373,12 @@ class AgentOSDashboard(App[None]):
         self._logged_wasm_runs = len(runs)
 
     def _render_supervision_events(self) -> None:
-        if self.supervision_event_snapshot is None:
+        if self._demo_supervision_events is not None:
+            events = self._demo_supervision_events
+        elif self.supervision_event_snapshot is not None:
+            events = self.supervision_event_snapshot()
+        else:
             return
-        events = self.supervision_event_snapshot()
         log = self.query_one("#wasm-log", RichLog)
         for event in events[self._logged_supervision_events :]:
             style = {
