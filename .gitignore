@@ -38,3 +38,17 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Pytest temporary directories
+.pytest*
+pytest-tmp/
+.pytest_cache/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Coverage
+.coverage
+htmlcov/
