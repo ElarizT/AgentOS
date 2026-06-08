@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -50,7 +51,7 @@ class AgentOSDashboard(App[None]):
         layout: grid;
         grid-size: 2 3;
         grid-columns: 1fr 1fr;
-        grid-rows: 2fr 1fr 3fr;
+        grid-rows: 1fr 2fr 2fr;
         height: 1fr;
     }
 
@@ -98,11 +99,13 @@ class AgentOSDashboard(App[None]):
     #memory-bars {
         height: 1fr;
         padding-top: 1;
+        overflow: auto;
     }
 
     #wasm-log {
         height: 1fr;
         background: #080b0f;
+        overflow: auto;
     }
 
     #process-table {
@@ -111,6 +114,7 @@ class AgentOSDashboard(App[None]):
 
     #agent-tree {
         height: 1fr;
+        overflow: auto;
     }
 
     #shell-input {
@@ -153,6 +157,9 @@ class AgentOSDashboard(App[None]):
         self._demo_supervision_events: list[dict[str, Any]] | None = None
         self._demo_page_tables: list[dict[str, Any]] | None = None
         self._demo_status: str | None = None
+        self._mailbox_signature: tuple[tuple[str, int, int, str], ...] | None = None
+        self._process_signature: tuple[tuple[Any, ...], ...] | None = None
+        self._scrollable_content: dict[str, str] = {}
         self._wasm_placeholder_logged = False
 
     def load_research_team_snapshot(self, state: dict[str, Any]) -> None:
@@ -239,8 +246,8 @@ class AgentOSDashboard(App[None]):
                 yield Static("Page Table Context Visualizer", classes="pane-title")
                 yield Static(id="memory-bars")
             with Vertical(id="wasm-pane", classes="pane"):
-                yield Static("WASM Execution Shield Matrix", classes="pane-title")
-                yield RichLog(id="wasm-log", markup=True, wrap=True, highlight=True)
+                yield Static("Execution / WASM Isolation Monitor", classes="pane-title")
+                yield RichLog(id="wasm-log", markup=True, wrap=True, highlight=True, auto_scroll=False)
             with Vertical(id="agent-tree-pane", classes="pane"):
                 yield Static("Agent Tree View", classes="pane-title")
                 yield Static(id="agent-tree")
@@ -269,11 +276,10 @@ class AgentOSDashboard(App[None]):
         event.input.value = ""
         if not command:
             return
-        log = self.query_one("#wasm-log", RichLog)
-        log.write(f"[bold #8bd5ff]{SHELL_PROMPT}[/] {command}")
+        self._write_execution_log(f"[bold #8bd5ff]{SHELL_PROMPT}[/] {command}")
 
         if self.command_handler is None:
-            log.write("[yellow]No command handler is attached.[/]")
+            self._write_execution_log("[yellow]No command handler is attached.[/]")
             return
 
         try:
@@ -281,11 +287,11 @@ class AgentOSDashboard(App[None]):
             if hasattr(result, "__await__"):
                 result = await result  # type: ignore[assignment,misc]
         except Exception as exc:
-            log.write(f"[bold red]error:[/] {exc}")
+            self._write_execution_log(f"[bold red]error:[/] {exc}")
             return
 
         if result:
-            log.write(str(result))
+            self._write_execution_log(str(result))
 
     def refresh_metrics(self) -> None:
         mailboxes = self._read_mailboxes()
@@ -339,23 +345,34 @@ class AgentOSDashboard(App[None]):
         )
 
     def _render_mailboxes(self, mailboxes: list[MailboxMetric]) -> None:
+        signature = tuple(
+            (metric.agent_name, metric.queue_depth, metric.buffer_size, metric.routing_method)
+            for metric in mailboxes
+        )
+        if signature == self._mailbox_signature:
+            return
+        self._mailbox_signature = signature
         table = self.query_one("#ipc-table", DataTable)
-        table.clear()
+        with self._preserve_scroll(table):
+            table.clear()
 
-        for metric in mailboxes:
-            ratio = metric.queue_depth / metric.buffer_size if metric.buffer_size else 0.0
-            queue_style = "bold red" if ratio >= 0.8 else "green"
-            route_style = "yellow" if metric.routing_method != "Direct" else "cyan"
+            for metric in mailboxes:
+                ratio = metric.queue_depth / metric.buffer_size if metric.buffer_size else 0.0
+                queue_style = "bold red" if ratio >= 0.8 else "green"
+                route_style = "yellow" if metric.routing_method != "Direct" else "cyan"
 
-            table.add_row(
-                metric.agent_name,
-                Text(f"{metric.queue_depth}/{metric.buffer_size}", style=queue_style),
-                Text(metric.routing_method, style=route_style),
-            )
+                table.add_row(
+                    metric.agent_name,
+                    Text(f"{metric.queue_depth}/{metric.buffer_size}", style=queue_style),
+                    Text(metric.routing_method, style=route_style),
+                )
 
     def _render_memory(self, agents: list[str]) -> None:
         if self._demo_page_tables is not None:
-            self.query_one("#memory-bars", Static).update(self._format_demo_page_tables(self._demo_page_tables))
+            self._update_scrollable_static(
+                "#memory-bars",
+                self._format_demo_page_tables(self._demo_page_tables),
+            )
             return
 
         lines: list[str] = []
@@ -385,7 +402,7 @@ class AgentOSDashboard(App[None]):
                 f"paged={summary.get('paged_out_frames', 0)}{suffix}"
             )
 
-        self.query_one("#memory-bars", Static).update("\n".join(lines))
+        self._update_scrollable_static("#memory-bars", "\n".join(lines))
 
     @staticmethod
     def _format_demo_page_tables(page_tables: list[dict[str, Any]]) -> str:
@@ -400,18 +417,21 @@ class AgentOSDashboard(App[None]):
         return "\n".join(lines)
 
     def _render_wasm_log(self, runs: list[WasmRunMetric]) -> None:
-        log = self.query_one("#wasm-log", RichLog)
         if not runs and not self._wasm_placeholder_logged:
-            log.write("[dim]Sandboxes Active: 0 | Executions: 0 | Isolation: Ready[/]")
+            self._write_execution_log(
+                "[dim]Sandboxes Active: 0 | Executions: 0 | Isolation: Ready[/]",
+                scroll_end=False,
+            )
             self._wasm_placeholder_logged = True
         for run in runs[self._logged_wasm_runs :]:
             status = "[green]Success[/]" if run.success else "[bold dark_red]Trapped[/]"
             error = ""
             if run.error_message:
                 error = f" [dark_red]{run.error_message}[/]"
-            log.write(
+            self._write_execution_log(
                 f"{run.timestamp} | Last Run Executed | {status} | "
-                f"Fuel Consumed: [bold]{run.fuel_consumed}[/]{error}"
+                f"Fuel Consumed: [bold]{run.fuel_consumed}[/]{error}",
+                scroll_end=False,
             )
         self._logged_wasm_runs = len(runs)
 
@@ -422,7 +442,6 @@ class AgentOSDashboard(App[None]):
             events = self.supervision_event_snapshot()
         else:
             return
-        log = self.query_one("#wasm-log", RichLog)
         for event in events[self._logged_supervision_events :]:
             style = {
                 "child_terminated": "bold red",
@@ -436,37 +455,60 @@ class AgentOSDashboard(App[None]):
                     message = f"[Memory] {event.get('message', '')}"
                 else:
                     message = f"[Supervisor]\n{event.get('message', '')}"
-                log.write(Text(message, style=style))
+                self._write_execution_log(Text(message, style=style), scroll_end=False)
         self._logged_supervision_events = len(events)
 
     def _render_processes(self, rows: list[dict[str, Any]]) -> None:
-        table = self.query_one("#process-table", DataTable)
-        table.clear()
-        for row in rows:
-            status = str(row.get("status", "unknown"))
-            status_style = {
-                "running": "green",
-                "starting": "yellow",
-                "stopping": "yellow",
-                "killed": "dim",
-                "crashed": "bold red",
-                "exited": "dim",
-            }.get(status, "white")
-            display_status = self._display_process_status(status, external=bool(row.get("external")))
-            depth = int(row.get("tree_depth", 0))
-            display_name = f"{'  ' * depth}{row.get('name', '')}"
-            table.add_row(
-                str(row.get("pid", "")),
-                display_name,
-                Text(display_status, style=status_style),
-                str(row.get("execution_mode", "")),
-                "" if row.get("supervisor_pid") is None else str(row.get("supervisor_pid")),
-                str(row.get("child_count", 0)),
-                str(row.get("restart_count", 0)),
-                str(row.get("supervisor_strategy", "")),
-                f"{row.get('memory_hot_tokens', row.get('memory_tokens', 0))}/{row.get('memory_paged_count', 0)}",
-                f"{row.get('messages_sent', 0)}/{row.get('messages_received', 0)}/{row.get('message_errors', 0)}",
+        signature = tuple(
+            (
+                row.get("pid"),
+                row.get("name"),
+                row.get("status"),
+                row.get("execution_mode"),
+                row.get("supervisor_pid"),
+                row.get("child_count"),
+                row.get("restart_count"),
+                row.get("supervisor_strategy"),
+                row.get("memory_hot_tokens", row.get("memory_tokens", 0)),
+                row.get("memory_paged_count", 0),
+                row.get("messages_sent", 0),
+                row.get("messages_received", 0),
+                row.get("message_errors", 0),
+                row.get("external"),
             )
+            for row in rows
+        )
+        if signature == self._process_signature:
+            return
+        self._process_signature = signature
+        table = self.query_one("#process-table", DataTable)
+        with self._preserve_scroll(table):
+            table.clear()
+            for row in rows:
+                status = str(row.get("status", "unknown"))
+                status_style = {
+                    "running": "green",
+                    "starting": "yellow",
+                    "stopping": "yellow",
+                    "killed": "dim",
+                    "crashed": "bold red",
+                    "exited": "dim",
+                }.get(status, "white")
+                display_status = self._display_process_status(status, external=bool(row.get("external")))
+                depth = int(row.get("tree_depth", 0))
+                display_name = f"{'  ' * depth}{row.get('name', '')}"
+                table.add_row(
+                    str(row.get("pid", "")),
+                    display_name,
+                    Text(display_status, style=status_style),
+                    str(row.get("execution_mode", "")),
+                    "" if row.get("supervisor_pid") is None else str(row.get("supervisor_pid")),
+                    str(row.get("child_count", 0)),
+                    str(row.get("restart_count", 0)),
+                    str(row.get("supervisor_strategy", "")),
+                    f"{row.get('memory_hot_tokens', row.get('memory_tokens', 0))}/{row.get('memory_paged_count', 0)}",
+                    f"{row.get('messages_sent', 0)}/{row.get('messages_received', 0)}/{row.get('message_errors', 0)}",
+                )
 
     @staticmethod
     def _display_process_status(status: str, *, external: bool = False) -> str:
@@ -476,7 +518,33 @@ class AgentOSDashboard(App[None]):
 
     def _render_agent_tree(self) -> None:
         hierarchy = self._demo_hierarchy or self._hierarchy_from_process_rows(self._process_rows)
-        self.query_one("#agent-tree", Static).update(self._format_agent_tree(hierarchy))
+        self._update_scrollable_static("#agent-tree", self._format_agent_tree(hierarchy))
+
+    def _update_scrollable_static(self, selector: str, content: str) -> None:
+        if self._scrollable_content.get(selector) == content:
+            return
+        self._scrollable_content[selector] = content
+        widget = self.query_one(selector, Static)
+        with self._preserve_scroll(widget):
+            widget.update(content)
+
+    def _write_execution_log(self, content: Any, *, scroll_end: bool | None = None) -> None:
+        log = self.query_one("#wasm-log", RichLog)
+        if scroll_end is None:
+            scroll_end = log.is_vertical_scroll_end
+        log.write(content, scroll_end=scroll_end)
+
+    @contextmanager
+    def _preserve_scroll(self, widget: Any) -> Any:
+        scroll_x = getattr(widget, "scroll_x", 0)
+        scroll_y = getattr(widget, "scroll_y", 0)
+        try:
+            yield
+        finally:
+            try:
+                widget.scroll_to(x=scroll_x, y=scroll_y, animate=False, force=True)
+            except Exception:
+                pass
 
     @staticmethod
     def _hierarchy_from_process_rows(rows: list[dict[str, Any]]) -> dict[str, Any] | None:

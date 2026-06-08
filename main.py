@@ -93,11 +93,20 @@ DEFAULT_AGENTS_MANIFEST: dict[str, Any] = {
 
 
 def format_external_agent_run(result: Any) -> str:
-    lines = [f"External agent loaded:\n{result.manifest_name}"]
+    status = "Completed" if result.succeeded else "Failed"
+    lines = [
+        "External Agent Runtime\n"
+        f"Loaded: {result.manifest_name}\n"
+        f"Status: {status}\n\n"
+        "[ok] Manifest validated\n"
+        "[ok] Agent loaded\n"
+        "[ok] Lifecycle executed\n\n"
+        f"External agent loaded:\n{result.manifest_name}"
+    ]
     if result.output:
         lines.append(result.output)
     if result.succeeded:
-        lines.append(f"External agent completed:\n{result.manifest_name}")
+        lines.append(f"[ok] Completed\n\nExternal agent completed:\n{result.manifest_name}")
     else:
         lines.append(
             f"External agent failed:\n{result.manifest_name}\n\n"
