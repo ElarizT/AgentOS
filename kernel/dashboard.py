@@ -219,6 +219,15 @@ class AgentOSDashboard(App[None]):
         self._demo_page_tables = list(state["page_tables"])
         self._demo_supervision_events = list(state["events"])
 
+    def load_external_agent_result(self, *, succeeded: bool) -> None:
+        """Return dashboard panels to live state and show external run status."""
+        self._demo_mailboxes = None
+        self._demo_process_rows = None
+        self._demo_hierarchy = None
+        self._demo_supervision_events = None
+        self._demo_page_tables = None
+        self._demo_status = "External Agent Complete" if succeeded else "External Agent Failed"
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(id="status-bar")
@@ -238,7 +247,10 @@ class AgentOSDashboard(App[None]):
             with Vertical(id="process-pane", classes="pane"):
                 yield Static("Process Registry", classes="pane-title")
                 yield DataTable(id="process-table")
-        yield Input(placeholder=f"{SHELL_PROMPT} run <path> | demos | ps | kill <PID>", id="shell-input")
+        yield Input(
+            placeholder=f"{SHELL_PROMPT} run <path> | inspect <path> | demos | ps | kill <PID>",
+            id="shell-input",
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -440,7 +452,7 @@ class AgentOSDashboard(App[None]):
                 "crashed": "bold red",
                 "exited": "dim",
             }.get(status, "white")
-            display_status = self._display_process_status(status)
+            display_status = self._display_process_status(status, external=bool(row.get("external")))
             depth = int(row.get("tree_depth", 0))
             display_name = f"{'  ' * depth}{row.get('name', '')}"
             table.add_row(
@@ -457,7 +469,9 @@ class AgentOSDashboard(App[None]):
             )
 
     @staticmethod
-    def _display_process_status(status: str) -> str:
+    def _display_process_status(status: str, *, external: bool = False) -> str:
+        if external and status == "exited":
+            return "COMPLETED"
         return "TERMINATED" if status == "killed" else status
 
     def _render_agent_tree(self) -> None:

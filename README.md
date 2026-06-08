@@ -57,6 +57,18 @@ Process Registry, workflow or recovery status, and WASM isolation status.
 - `docs/supervision.md` covers supervisor trees and restart policies.
 - `docs/persistent_memory.md` covers tiered persistent memory paging.
 
+## External agents preview
+
+v0.7 begins support for running user-provided agents through an `agentos.toml`
+manifest. Inspect a project from the Agent OS dashboard shell:
+
+```text
+AgentOS> inspect ./examples/external_basic_agent
+AgentOS> run ./examples/external_basic_agent
+```
+
+v0.7 currently supports inspecting and running local Python `basic` agents only.
+
 ## Requirements
 
 - Python 3.10+

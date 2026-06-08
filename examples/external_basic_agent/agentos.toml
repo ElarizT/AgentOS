@@ -1,0 +1,10 @@
+name = "external_basic_agent"
+type = "basic"
+entrypoint = "agent.py"
+runtime = "python"
+
+[permissions]
+network = false
+filesystem = false
+memory = true
+ipc = true

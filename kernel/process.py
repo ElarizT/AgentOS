@@ -5,6 +5,7 @@ import ast
 import contextlib
 import importlib.util
 import inspect
+import io
 import json
 import multiprocessing
 import os
@@ -390,10 +391,23 @@ class ProcessRecord:
     escalated: bool = False
     memory_restore_policy: str = "none"
     latest_snapshot_id: str | None = None
+    external: bool = False
 
     @property
     def uptime_seconds(self) -> float:
         return max(time.monotonic() - self.started_at, 0.0)
+
+
+@dataclass(frozen=True)
+class ExternalAgentRunResult:
+    manifest_name: str
+    record: ProcessRecord
+    output: str
+    error: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.record.state is ProcessState.EXITED
 
 
 class ProcessRegistry:
@@ -436,6 +450,85 @@ class ProcessRegistry:
             parent_pid=None,
             restart_policy=RestartPolicy.PERMANENT,
             execution_mode=self.execution_mode,
+        )
+
+    async def run_external_project(self, raw_path: str) -> ExternalAgentRunResult:
+        """Validate and run one short-lived external basic Python agent."""
+        from agentos.loader import load_external_agent
+
+        manifest = load_external_agent(raw_path)
+        self._validate_allowed_path(manifest.project_dir)
+        self._validate_allowed_path(manifest.entrypoint_path)
+        self._preflight_source(manifest.entrypoint_path)
+
+        process = self._load_process(manifest.entrypoint_path)
+        name = str(getattr(process, "name", "") or process.__class__.__name__).strip()
+        self._validate_process(process, name)
+
+        async with self._lock:
+            if name in self._by_name:
+                raise ValueError(f"process name '{name}' is already running")
+
+            pid = self._allocate_pid()
+            mailbox_size = int(getattr(process, "mailbox_size", self.mailbox_size) or self.mailbox_size)
+            token_budget = int(getattr(process, "token_budget", self.token_budget) or self.token_budget)
+            capabilities = tuple(str(item) for item in getattr(process, "capabilities", ()) or ())
+            record = ProcessRecord(
+                pid=pid,
+                name=name,
+                path=manifest.entrypoint_path,
+                state=ProcessState.STARTING,
+                started_at=time.monotonic(),
+                mailbox_size=mailbox_size,
+                execution_mode=ExecutionMode.IN_PROCESS,
+                restart_policy=RestartPolicy.TEMPORARY,
+                external=True,
+            )
+
+            try:
+                self.bus.register_mailbox(name, mailbox_size)
+                self.memory.register_agent(name, token_budget)
+                self._bind_memory_process(name, pid)
+                for capability in capabilities:
+                    if capability.strip():
+                        self.kernel.register_agent_capability(name, capability.strip())
+                record.resources_registered = True
+
+                process.pid = pid
+                process.agent_name = name
+                process.bus = self.bus
+                process.memory = self.memory
+                process.kernel = self.kernel
+                process.registry = self
+                process.stop_event = record.stop_event
+
+                self._records[pid] = record
+                self._by_name[name] = pid
+            except Exception:
+                await self._rollback_startup_locked(record)
+                raise
+
+        captured = io.StringIO()
+        error: str | None = None
+        record.state = ProcessState.RUNNING
+        try:
+            with contextlib.redirect_stdout(captured):
+                await process.on_start()
+                await process.on_stop()
+            record.state = ProcessState.EXITED
+        except Exception as exc:
+            record.state = ProcessState.CRASHED
+            record.error = traceback.format_exc(limit=8)
+            error = str(exc) or exc.__class__.__name__
+        finally:
+            async with self._lock:
+                await self._cleanup_locked(record)
+
+        return ExternalAgentRunResult(
+            manifest_name=manifest.name,
+            record=record,
+            output=captured.getvalue().rstrip(),
+            error=error,
         )
 
     async def _run_path(
@@ -1411,6 +1504,7 @@ class ProcessRegistry:
             "supervision_escalated": record.escalated,
             "path": str(record.path),
             "error": record.error,
+            "external": record.external,
         }
 
     def _tree_depth(self, record: ProcessRecord) -> int:

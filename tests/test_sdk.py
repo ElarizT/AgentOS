@@ -7,9 +7,11 @@ from kernel.process import AgentProcess as KernelAgentProcess
 from kernel.process import ProcessRegistry
 from kernel.shell_help import (
     DEMO_COMMANDS,
+    INSPECT_COMMAND,
     SUPERVISOR_RECOVERY_DEMO_PATH,
     format_demo_browser,
     format_shell_help,
+    parse_inspect_path,
 )
 from test_process_registry import FakeBus, FakeKernel, FakeMemory
 
@@ -59,6 +61,7 @@ def test_shell_help_includes_quickstart_commands(tmp_path) -> None:
     help_text = format_shell_help(tmp_path)
 
     assert "run <path>" in help_text
+    assert "inspect <path>" in help_text
     assert "ps" in help_text
     assert "kill <PID>" in help_text
     assert "demos" in help_text
@@ -66,6 +69,7 @@ def test_shell_help_includes_quickstart_commands(tmp_path) -> None:
     assert "AGENT_OS_PROCESS_ISOLATION=in-process" in help_text
     assert "AGENT_OS_PROCESS_ISOLATION=process" in help_text
     assert "run examples/hello_agent.py" in help_text
+    assert "inspect examples/external_basic_agent" in help_text
     assert "run examples/research_team" in help_text
     assert "docs/sdk_quickstart.md" in help_text
 
@@ -83,6 +87,21 @@ def test_demo_browser_lists_research_team_run_command() -> None:
 
 def test_demo_browser_command_and_alias_are_recognized() -> None:
     assert {"demo", "demos"} <= DEMO_COMMANDS
+
+
+def test_inspect_external_agent_command_is_recognized() -> None:
+    assert INSPECT_COMMAND == "inspect"
+    assert parse_inspect_path("inspect ./examples/external_basic_agent") == (
+        "./examples/external_basic_agent"
+    )
+    assert parse_inspect_path(r"inspect .\examples\external_basic_agent") == (
+        r".\examples\external_basic_agent"
+    )
+
+
+def test_inspect_command_requires_one_path() -> None:
+    with pytest.raises(ValueError, match="usage: inspect <path>"):
+        parse_inspect_path("inspect")
 
 
 @pytest.mark.asyncio

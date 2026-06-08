@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DEMO_COMMANDS = frozenset({"demo", "demos"})
+INSPECT_COMMAND = "inspect"
 SUPERVISOR_RECOVERY_DEMO_PATH = "demos/supervisor_recovery"
 MEMORY_PAGING_DEMO_PATH = "demos/memory_paging"
 
@@ -13,6 +14,18 @@ def is_supervisor_recovery_demo_path(raw_path: str) -> bool:
 
 def is_memory_paging_demo_path(raw_path: str) -> bool:
     return raw_path.replace("\\", "/").rstrip("/") == MEMORY_PAGING_DEMO_PATH
+
+
+def parse_inspect_path(command: str) -> str:
+    """Read an inspect path without consuming Windows backslashes."""
+    parts = command.strip().split(maxsplit=1)
+    if len(parts) != 2 or parts[0].lower() != INSPECT_COMMAND or not parts[1].strip():
+        raise ValueError("usage: inspect <path>")
+
+    path = parts[1].strip()
+    if len(path) >= 2 and path[0] == path[-1] and path[0] in {'"', "'"}:
+        path = path[1:-1]
+    return path
 
 
 def format_demo_browser() -> str:
@@ -38,12 +51,14 @@ def format_shell_help(process_root: Path) -> str:
         "commands:\n"
         "  run <path>   start an AgentProcess script under "
         f"{process_root}\n"
+        "  inspect <path>  inspect an external agent manifest\n"
         "  ps           list process registry status\n"
         "  kill <PID>   gracefully stop and unregister a process\n"
         "  demos        list available built-in demos\n"
         "  help         show this quick reference\n"
         "\n"
         "examples:\n"
+        "  inspect examples/external_basic_agent\n"
         "  run examples/hello_agent.py\n"
         "  run examples/memory_agent.py\n"
         "  run examples/supervisor_quickstart.py\n"

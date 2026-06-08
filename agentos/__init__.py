@@ -1,5 +1,11 @@
 """Stable public SDK for writing Agent OS processes."""
 
+from agentos.loader import (
+    AgentPermissions,
+    ExternalAgentManifest,
+    inspect_external_agent,
+    load_external_agent,
+)
 from kernel.ipc_protocol import (
     ControlMessage,
     ErrorMessage,
@@ -17,10 +23,12 @@ from kernel.process import AgentProcess, ExecutionMode, RestartPolicy, Superviso
 
 __all__ = [
     "AgentProcess",
+    "AgentPermissions",
     "ControlMessage",
     "ErrorMessage",
     "EventMessage",
     "ExecutionMode",
+    "ExternalAgentManifest",
     "HeartbeatMessage",
     "IPCMessage",
     "IPCProtocolError",
@@ -30,5 +38,7 @@ __all__ = [
     "TaskResponse",
     "make_error",
     "make_message",
+    "inspect_external_agent",
+    "load_external_agent",
     "parse_message",
 ]

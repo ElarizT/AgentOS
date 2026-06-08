@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agentos.loader import inspect_external_agent
 from agent_os_core import (
     AgentMessage,
     ContextMemoryManager,
@@ -24,10 +25,12 @@ from kernel.memory_store import PersistentMemoryManager
 from kernel.process import ProcessRegistry
 from kernel.shell_help import (
     DEMO_COMMANDS,
+    INSPECT_COMMAND,
     format_demo_browser,
     format_shell_help,
     is_memory_paging_demo_path,
     is_supervisor_recovery_demo_path,
+    parse_inspect_path,
 )
 
 try:
@@ -87,6 +90,24 @@ DEFAULT_AGENTS_MANIFEST: dict[str, Any] = {
         },
     ]
 }
+
+
+def format_external_agent_run(result: Any) -> str:
+    lines = [f"External agent loaded:\n{result.manifest_name}"]
+    if result.output:
+        lines.append(result.output)
+    if result.succeeded:
+        lines.append(f"External agent completed:\n{result.manifest_name}")
+    else:
+        lines.append(
+            f"External agent failed:\n{result.manifest_name}\n\n"
+            f"Error: {result.error or 'unknown runtime error'}"
+        )
+    return "\n\n".join(lines)
+
+
+def is_external_agent_project_path(raw_path: str) -> bool:
+    return Path(raw_path).expanduser().is_dir()
 
 
 @dataclass(frozen=True)
@@ -596,6 +617,10 @@ async def main() -> None:
     app: AgentOSDashboard
 
     async def handle_shell_command(command: str) -> str:
+        command_words = command.split(maxsplit=1)
+        if command_words and command_words[0].lower() == INSPECT_COMMAND:
+            return inspect_external_agent(parse_inspect_path(command))
+
         try:
             parts = shlex.split(command)
         except ValueError as exc:
@@ -626,6 +651,10 @@ async def main() -> None:
 
                 app.load_memory_paging_snapshot(build_demo_snapshot())
                 return "Memory Paging demo loaded: Memory Demo Complete"
+            if is_external_agent_project_path(argument):
+                result = await process_registry.run_external_project(argument)
+                app.load_external_agent_result(succeeded=result.succeeded)
+                return format_external_agent_run(result)
             record = await process_registry.run_path(argument)
             return f"started PID {record.pid} ({record.name}) from {record.path}"
 
