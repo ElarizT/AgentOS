@@ -1,5 +1,5 @@
 # Agent OS
-Python 3.14 | Rust Core | 83+ Tests Passing | Active Development
+![Python 3.14](https://img.shields.io/badge/Python-3.14-blue) ![Rust Core](https://img.shields.io/badge/Rust-Core-orange) ![83+ Tests Passing](https://img.shields.io/badge/Tests-83%2B%20Passing-brightgreen) ![Active Development](https://img.shields.io/badge/Status-Active%20Development-green)
 
 An experimental runtime for hierarchical multi-agent systems featuring supervision, IPC, memory paging, fault tolerance, and an interactive dashboard.
 
