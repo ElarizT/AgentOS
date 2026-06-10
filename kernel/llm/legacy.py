@@ -1,12 +1,11 @@
+"""Legacy vendor-specific async LLM manager retained for compatibility."""
+
 from __future__ import annotations
 
 import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Any
-
-import httpx
-from openai import AsyncOpenAI
 
 
 CODE_BLOCK_PATTERN = re.compile(
@@ -30,7 +29,7 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
-class LLMResponse:
+class LegacyLLMResponse:
     text: str
     extracted_code_blocks: list[str]
     input_tokens: int = 0
@@ -38,9 +37,12 @@ class LLMResponse:
 
 
 class AsyncLLMManager:
-    """Small non-blocking LLM client facade for OpenAI, Anthropic, and Ollama."""
+    """Legacy non-blocking client facade for the optional interactive path."""
 
     def __init__(self, config: LLMConfig) -> None:
+        import httpx
+        from openai import AsyncOpenAI
+
         self.config = config
         self.provider = config.provider.lower().strip()
         self._http_client = httpx.AsyncClient(
@@ -48,7 +50,7 @@ class AsyncLLMManager:
             limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
             headers=config.extra_headers,
         )
-        self._openai_client: AsyncOpenAI | None = None
+        self._openai_client: Any = None
 
         if self.provider in {"openai", "ollama"}:
             self._openai_client = AsyncOpenAI(
@@ -62,7 +64,7 @@ class AsyncLLMManager:
     async def aclose(self) -> None:
         await self._http_client.aclose()
 
-    async def __aenter__(self) -> "AsyncLLMManager":
+    async def __aenter__(self) -> AsyncLLMManager:
         return self
 
     async def __aexit__(self, *_exc_info: object) -> None:
@@ -72,7 +74,7 @@ class AsyncLLMManager:
         self,
         system_prompt: str,
         active_context: list[str],
-    ) -> LLMResponse:
+    ) -> LegacyLLMResponse:
         messages = self._build_openai_messages(system_prompt, active_context)
 
         try:
@@ -98,7 +100,7 @@ class AsyncLLMManager:
     async def _generate_openai_compatible(
         self,
         messages: list[dict[str, str]],
-    ) -> LLMResponse:
+    ) -> LegacyLLMResponse:
         if self._openai_client is None:
             raise LLMError("OpenAI-compatible client was not initialized")
 
@@ -109,7 +111,7 @@ class AsyncLLMManager:
         text = completion.choices[0].message.content or ""
         usage = completion.usage
 
-        return LLMResponse(
+        return LegacyLLMResponse(
             text=text,
             extracted_code_blocks=extract_python_code_blocks(text),
             input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
@@ -120,7 +122,7 @@ class AsyncLLMManager:
         self,
         system_prompt: str,
         active_context: list[str],
-    ) -> LLMResponse:
+    ) -> LegacyLLMResponse:
         if not self.config.api_key:
             raise LLMError("Anthropic provider requires api_key")
 
@@ -158,7 +160,7 @@ class AsyncLLMManager:
         text = "\n".join(part for part in text_parts if part)
         usage = data.get("usage", {})
 
-        return LLMResponse(
+        return LegacyLLMResponse(
             text=text,
             extracted_code_blocks=extract_python_code_blocks(text),
             input_tokens=int(usage.get("input_tokens", 0)),

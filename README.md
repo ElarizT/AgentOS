@@ -207,3 +207,9 @@ does not influence runtime execution.
 Step 23 adds an Agent Dependency Graph for inspecting observed workflow
 structure and communication dependencies between agents. It is observability-only
 and does not introduce dependency scheduling yet.
+
+### LLM Runtime Layer
+
+Step 24 starts the v0.8.0 LLM Runtime Layer with a provider-agnostic interface
+and deterministic test provider. This is the foundation for future real
+providers; it requires no API keys or network access.

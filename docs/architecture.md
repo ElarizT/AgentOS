@@ -24,7 +24,7 @@ flowchart TD
         REG --> ASDK
         REG --> PROTO["kernel/ipc_protocol.py<br/>Validated IPC envelopes"]
         REG --> RUNNER["kernel/process_runner.py<br/>Isolated child runner"]
-        APP -. optional .-> LLM["kernel/llm.py<br/>AsyncLLMManager"]
+        APP -. optional .-> LLM["kernel/llm/<br/>Provider-neutral runtime and legacy manager"]
         APP -. optional .-> TOOL["kernel/toolchain.py<br/>Restricted Python-to-WASM compiler"]
     end
 
@@ -442,7 +442,7 @@ flowchart TD
     MAIN["main.py"] --> DASH["kernel/dashboard.py"]
     MAIN --> PROC["kernel/process.py"]
     MAIN --> PMEM["kernel/memory_store.py"]
-    MAIN --> LLM["kernel/llm.py"]
+    MAIN --> LLM["kernel/llm/"]
     MAIN --> TOOL["kernel/toolchain.py"]
     MAIN --> CORE["agent_os_core PyO3 module"]
 
@@ -474,6 +474,7 @@ flowchart TD
 | `kernel/ipc_protocol.py` | Python standard library | Structured protocol model and validation |
 | `kernel/memory_store.py` | Python standard library | Persistent hot/warm/cold memory and snapshots |
 | `kernel/dashboard.py` | Textual, Rich | Terminal UI and telemetry rendering |
+| `kernel/llm/` | Python standard library, optional legacy provider dependencies | Provider-neutral LLM requests, providers, runtime facade, and structured events |
 | `kernel/toolchain.py` | Python AST, optional Python `wasmtime` assembler | Restricted Python-to-WASM compilation |
 | `src/lib.rs` | `src/ipc.rs`, `src/memory.rs`, `src/sandbox.rs` | PyO3 extension exports |
 | `src/ipc.rs` | Tokio, PyO3, Serde JSON | Native kernel capability registry and mailbox transport |
