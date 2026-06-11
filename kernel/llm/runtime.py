@@ -24,13 +24,14 @@ class LLMRuntime:
     def chat(
         self,
         messages: Sequence[MessageInput],
-        model: str,
+        model: str | None = None,
         temperature: float = 0.0,
         metadata: Mapping[str, Any] | None = None,
     ) -> LLMResponse:
+        resolved_model = model or str(getattr(self.provider, "default_model", "") or "")
         request = LLMRequest(
             messages=tuple(_coerce_message(message) for message in messages),
-            model=model,
+            model=resolved_model,
             temperature=temperature,
             metadata=dict(metadata or {}),
         )

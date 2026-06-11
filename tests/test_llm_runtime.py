@@ -12,6 +12,7 @@ from kernel.llm import (
     LLMRuntime,
     LLMRuntimeError,
     LLMUsage,
+    OpenAICompatibleProvider,
 )
 
 
@@ -130,3 +131,4 @@ def test_public_llm_runtime_imports_are_stable() -> None:
     assert ProviderImport is DeterministicLLMProvider
     assert RuntimeImport is LLMRuntime
     assert MessageImport is LLMMessage
+    assert OpenAICompatibleProvider.__name__ == "OpenAICompatibleProvider"

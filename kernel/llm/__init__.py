@@ -10,6 +10,7 @@ from kernel.llm.providers import (
     LLMProviderError,
     LLMRuntimeError,
 )
+from kernel.llm.openai_compatible import OpenAICompatibleProvider
 from kernel.llm.runtime import LLMRuntime
 from kernel.llm.types import LLMMessage, LLMRequest, LLMResponse, LLMUsage
 
@@ -45,6 +46,7 @@ __all__ = [
     "LLMRuntimeError",
     "LLMUsage",
     "LegacyLLMResponse",
+    "OpenAICompatibleProvider",
     "extract_python_code_blocks",
     "normalize_code_block",
 ]

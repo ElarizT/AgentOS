@@ -213,3 +213,22 @@ and does not introduce dependency scheduling yet.
 Step 24 starts the v0.8.0 LLM Runtime Layer with a provider-agnostic interface
 and deterministic test provider. This is the foundation for future real
 providers; it requires no API keys or network access.
+
+Step 25 adds an optional OpenAI-compatible provider adapter for real LLM calls.
+It supports OpenAI and configurable compatible APIs such as Groq or OpenRouter
+through `AGENTOS_LLM_API_KEY`, `AGENTOS_LLM_BASE_URL`, `AGENTOS_LLM_MODEL`, and
+`AGENTOS_LLM_PROVIDER`. The OpenAI SDK is loaded only when the adapter is used,
+and tests remain offline and deterministic.
+
+```python
+from kernel.llm import LLMRuntime, OpenAICompatibleProvider
+
+provider = OpenAICompatibleProvider(
+    api_key="placeholder-key",
+    base_url="https://api.openai.com/v1",
+    default_model="gpt-4.1-mini",
+)
+
+runtime = LLMRuntime(provider=provider)
+response = runtime.chat(messages=[{"role": "user", "content": "Hello"}])
+```
