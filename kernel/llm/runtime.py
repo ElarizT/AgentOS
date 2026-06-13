@@ -8,6 +8,7 @@ from typing import Any
 
 from kernel.events import RuntimeEvent
 from kernel.llm.providers import (
+    LLMBudgetExceededError,
     LLMProvider,
     LLMProviderError,
     LLMRuntimeError,
@@ -18,7 +19,11 @@ from kernel.llm.types import (
     LLMRequest,
     LLMResponse,
     LLMRetryPolicy,
+    LLMTokenBudget,
     LLMUsage,
+    LLMUsageLedger,
+    apply_usage_to_ledger,
+    check_token_budget,
 )
 
 
@@ -40,6 +45,7 @@ class LLMRuntime:
         retry_policy: LLMRetryPolicy | None = None,
         timeout_seconds: float | None = None,
         sleeper: Callable[[float], None] = sleep,
+        token_budget: LLMTokenBudget | None = None,
     ) -> None:
         if provider is not None and providers is not None:
             raise LLMRuntimeError("configure either provider or providers, not both")
@@ -61,6 +67,10 @@ class LLMRuntime:
                 raise LLMRuntimeError("timeout_seconds must be positive")
         self.timeout_seconds = timeout_seconds
         self._sleeper = sleeper
+        if token_budget is not None and not isinstance(token_budget, LLMTokenBudget):
+            raise LLMRuntimeError("token_budget must be an LLMTokenBudget")
+        self.token_budget = token_budget
+        self._usage_ledger = LLMUsageLedger()
         self._uses_registry = providers is not None
 
         if self._uses_registry:
@@ -79,6 +89,10 @@ class LLMRuntime:
                 )
             self.provider = provider
         self.event_sink = event_sink
+
+    def usage_snapshot(self) -> LLMUsageLedger:
+        """Return an immutable snapshot of cumulative provider-reported usage."""
+        return self._usage_ledger
 
     def chat(
         self,
@@ -131,6 +145,7 @@ class LLMRuntime:
             timeout_seconds=_resolve_timeout(timeout_seconds, self.timeout_seconds),
         )
         provider_name = _provider_name(active_provider)
+        self._check_request_budget(request)
         event_metadata = {"provider": provider_name, "model": request.model}
         self._emit(
             RuntimeEvent.info(
@@ -164,6 +179,7 @@ class LLMRuntime:
                 raise
             raise LLMProviderError(f"LLM provider '{provider_name}' failed") from exc
 
+        self._apply_response_usage(response)
         completed_metadata = {
             "provider": response.provider,
             "model": response.model,
@@ -205,6 +221,7 @@ class LLMRuntime:
             metadata=dict(metadata or {}),
             timeout_seconds=_resolve_timeout(timeout_seconds, self.timeout_seconds),
         )
+        self._check_request_budget(request)
         self._emit_routing_event(
             "llm.provider_selected",
             f"LLM provider selected: {selected_name}",
@@ -290,6 +307,7 @@ class LLMRuntime:
                     f"LLM provider '{provider_name}' failed"
                 ) from None
 
+            self._apply_response_usage(response)
             if attempt > 1:
                 self._emit_routing_event(
                     "llm.fallback_succeeded",
@@ -345,6 +363,95 @@ class LLMRuntime:
         raise LLMProviderError(
             f"All LLM providers failed after {len(attempts)} attempts: {provider_summary}"
         ) from None
+
+    def _check_request_budget(self, request: LLMRequest) -> None:
+        budget = self.token_budget
+        if budget is None:
+            return
+
+        max_tokens = _request_max_tokens(request.metadata)
+        exceeded = list(check_token_budget(budget, self._usage_ledger))
+        if max_tokens is not None:
+            if (
+                budget.max_completion_tokens is not None
+                and self._usage_ledger.completion_tokens + max_tokens
+                > budget.max_completion_tokens
+                and "completion" not in exceeded
+            ):
+                exceeded.append("completion")
+            if (
+                budget.max_total_tokens is not None
+                and self._usage_ledger.total_tokens + max_tokens
+                > budget.max_total_tokens
+                and "total" not in exceeded
+            ):
+                exceeded.append("total")
+
+        self._emit_budget_event(
+            "llm.budget_checked",
+            "LLM token budget checked",
+            tuple(exceeded),
+        )
+        self._handle_budget_exceeded(tuple(exceeded))
+
+    def _apply_response_usage(self, response: LLMResponse) -> None:
+        self._usage_ledger = apply_usage_to_ledger(self._usage_ledger, response.usage)
+        budget = self.token_budget
+        if budget is None:
+            return
+
+        self._emit_budget_event(
+            "llm.budget_updated",
+            "LLM token budget usage updated",
+            (),
+        )
+        exceeded = check_token_budget(budget, self._usage_ledger)
+        self._handle_budget_exceeded(exceeded)
+
+    def _handle_budget_exceeded(self, exceeded: tuple[str, ...]) -> None:
+        if not exceeded:
+            return
+        self._emit_budget_event(
+            "llm.budget_exceeded",
+            "LLM token budget exceeded",
+            exceeded,
+            error=True,
+        )
+        budget = self.token_budget
+        if budget is not None and budget.strict:
+            categories = ", ".join(exceeded)
+            raise LLMBudgetExceededError(
+                f"LLM token budget '{_budget_name(budget)}' exceeded: {categories}"
+            ) from None
+
+    def _emit_budget_event(
+        self,
+        event_type: str,
+        message: str,
+        exceeded: tuple[str, ...],
+        *,
+        error: bool = False,
+    ) -> None:
+        budget = self.token_budget
+        if budget is None:
+            return
+        metadata: dict[str, Any] = {
+            "budget": _budget_name(budget),
+            "prompt_tokens_used": self._usage_ledger.prompt_tokens,
+            "completion_tokens_used": self._usage_ledger.completion_tokens,
+            "total_tokens_used": self._usage_ledger.total_tokens,
+            "exceeded": ", ".join(exceeded) if exceeded else "none",
+        }
+        for field_name in (
+            "max_prompt_tokens",
+            "max_completion_tokens",
+            "max_total_tokens",
+        ):
+            value = getattr(budget, field_name)
+            if value is not None:
+                metadata[field_name] = value
+        factory = RuntimeEvent.error if error else RuntimeEvent.info
+        self._emit(factory("LLMRuntime", event_type, message, metadata))
 
     def _complete_with_retries(
         self,
@@ -554,3 +661,17 @@ def _retry_backoff(policy: LLMRetryPolicy, failed_attempt: int) -> float:
     if policy.max_backoff_seconds is not None:
         backoff = min(backoff, policy.max_backoff_seconds)
     return backoff
+
+
+def _request_max_tokens(metadata: Mapping[str, Any]) -> int | None:
+    value = metadata.get("max_tokens")
+    options = metadata.get("options")
+    if value is None and isinstance(options, Mapping):
+        value = options.get("max_tokens")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _budget_name(budget: LLMTokenBudget) -> str:
+    return budget.name or "default"

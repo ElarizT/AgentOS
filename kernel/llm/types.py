@@ -7,6 +7,34 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class LLMTokenBudget:
+    """Optional cumulative token limits for one LLM runtime."""
+
+    max_prompt_tokens: int | None = None
+    max_completion_tokens: int | None = None
+    max_total_tokens: int | None = None
+    name: str | None = None
+    strict: bool = True
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "max_prompt_tokens",
+            "max_completion_tokens",
+            "max_total_tokens",
+        ):
+            value = getattr(self, field_name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError(f"{field_name} must be a nonnegative integer")
+        if self.name is not None:
+            if not isinstance(self.name, str) or not self.name.strip():
+                raise ValueError("token budget name must be a nonempty string")
+        if not isinstance(self.strict, bool):
+            raise ValueError("token budget strict must be a boolean")
+
+
+@dataclass(frozen=True)
 class LLMRetryPolicy:
     """Deterministic retry settings applied to each provider attempt."""
 
@@ -68,6 +96,65 @@ class LLMUsage:
             value = getattr(self, name)
             if value is not None and value < 0:
                 raise ValueError(f"{name} must not be negative")
+
+
+@dataclass(frozen=True)
+class LLMUsageLedger:
+    """Cumulative provider-reported token usage."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+
+
+def apply_usage_to_ledger(
+    ledger: LLMUsageLedger,
+    usage: LLMUsage | None,
+) -> LLMUsageLedger:
+    """Return a new ledger containing only known provider-reported usage."""
+    if usage is None:
+        return ledger
+    return LLMUsageLedger(
+        prompt_tokens=ledger.prompt_tokens + (usage.prompt_tokens or 0),
+        completion_tokens=ledger.completion_tokens + (usage.completion_tokens or 0),
+        total_tokens=ledger.total_tokens + (usage.total_tokens or 0),
+    )
+
+
+def check_token_budget(
+    budget: LLMTokenBudget,
+    ledger: LLMUsageLedger,
+) -> tuple[str, ...]:
+    """Return the cumulative budget categories exceeded by a ledger."""
+    exceeded: list[str] = []
+    if (
+        budget.max_prompt_tokens is not None
+        and ledger.prompt_tokens > budget.max_prompt_tokens
+    ):
+        exceeded.append("prompt")
+    if (
+        budget.max_completion_tokens is not None
+        and ledger.completion_tokens > budget.max_completion_tokens
+    ):
+        exceeded.append("completion")
+    if budget.max_total_tokens is not None and ledger.total_tokens > budget.max_total_tokens:
+        exceeded.append("total")
+    return tuple(exceeded)
+
+
+def format_usage_ledger(ledger: LLMUsageLedger) -> str:
+    """Format cumulative known usage deterministically."""
+    return (
+        f"prompt={ledger.prompt_tokens}, "
+        f"completion={ledger.completion_tokens}, "
+        f"total={ledger.total_tokens}"
+    )
 
 
 @dataclass(frozen=True)

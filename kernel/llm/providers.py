@@ -11,6 +11,10 @@ class LLMRuntimeError(RuntimeError):
     """Base error raised by the provider-neutral LLM runtime."""
 
 
+class LLMBudgetExceededError(LLMRuntimeError):
+    """Raised when an LLM token budget guardrail is exceeded."""
+
+
 class LLMProviderError(LLMRuntimeError):
     """Raised when an LLM provider cannot complete a request."""
 

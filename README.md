@@ -279,3 +279,26 @@ runtime = LLMRuntime(
 
 response = runtime.chat(messages=[{"role": "user", "content": "Hello"}])
 ```
+
+Step 28 adds LLM token budget and usage guardrails. Budgets are optional, use
+only known provider-reported usage, and introduce no heavy tokenizer
+dependency. A budget overrun is a runtime guardrail failure, not a provider
+failure, so it does not trigger retries or fallbacks.
+
+```python
+from kernel.llm import LLMRuntime, LLMTokenBudget
+
+runtime = LLMRuntime(
+    providers={...},
+    default_provider="primary",
+    token_budget=LLMTokenBudget(
+        name="demo-budget",
+        max_prompt_tokens=20_000,
+        max_completion_tokens=5_000,
+        max_total_tokens=25_000,
+    ),
+)
+
+response = runtime.chat(messages=[{"role": "user", "content": "Hello"}])
+usage = runtime.usage_snapshot()
+```
