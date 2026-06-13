@@ -3,6 +3,13 @@
 from importlib import import_module
 from typing import Any
 
+from kernel.llm.cache import (
+    LLMCacheEntry,
+    LLMCacheKey,
+    LLMCacheStats,
+    LLMResponseCache,
+    build_llm_cache_key,
+)
 from kernel.llm.providers import (
     DeterministicLLMProvider,
     EchoLLMProvider,
@@ -49,6 +56,9 @@ __all__ = [
     "DeterministicLLMProvider",
     "EchoLLMProvider",
     "LLMConfig",
+    "LLMCacheEntry",
+    "LLMCacheKey",
+    "LLMCacheStats",
     "LLMError",
     "LLMMessage",
     "LLMBudgetExceededError",
@@ -56,6 +66,7 @@ __all__ = [
     "LLMProviderError",
     "LLMRequest",
     "LLMResponse",
+    "LLMResponseCache",
     "LLMRetryPolicy",
     "LLMTokenBudget",
     "LLMRuntime",
@@ -66,6 +77,7 @@ __all__ = [
     "OpenAICompatibleProvider",
     "classify_llm_error",
     "apply_usage_to_ledger",
+    "build_llm_cache_key",
     "check_token_budget",
     "extract_python_code_blocks",
     "format_usage_ledger",

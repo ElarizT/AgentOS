@@ -302,3 +302,27 @@ runtime = LLMRuntime(
 response = runtime.chat(messages=[{"role": "user", "content": "Hello"}])
 usage = runtime.usage_snapshot()
 ```
+
+Step 29 adds optional deterministic LLM response caching. Caching is disabled by
+default, and the default in-memory cache adds no external dependencies. Cache
+hits do not call providers or double-count provider usage. Cache events contain
+only safe provider/model fields and short opaque hashes, never prompt contents.
+
+```python
+from kernel.llm import LLMResponseCache, LLMRuntime
+
+runtime = LLMRuntime(
+    providers={...},
+    default_provider="primary",
+    cache=LLMResponseCache(enabled=True),
+)
+
+first = runtime.chat(messages=[{"role": "user", "content": "Hello"}])
+second = runtime.chat(messages=[{"role": "user", "content": "Hello"}])  # cached
+stats = runtime.cache_snapshot()
+```
+
+Cache keys include the provider route, model, messages, temperature, and
+supported `max_tokens` option. A fallback response is cached under the provider
+route that succeeded. Set request metadata `cache=False` (or
+`options={"cache": False}`) to opt out for one request.

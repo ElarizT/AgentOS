@@ -7,6 +7,12 @@ from time import sleep
 from typing import Any
 
 from kernel.events import RuntimeEvent
+from kernel.llm.cache import (
+    LLMCacheStats,
+    LLMResponseCache,
+    build_llm_cache_key,
+    copy_llm_response,
+)
 from kernel.llm.providers import (
     LLMBudgetExceededError,
     LLMProvider,
@@ -46,6 +52,7 @@ class LLMRuntime:
         timeout_seconds: float | None = None,
         sleeper: Callable[[float], None] = sleep,
         token_budget: LLMTokenBudget | None = None,
+        cache: LLMResponseCache | None = None,
     ) -> None:
         if provider is not None and providers is not None:
             raise LLMRuntimeError("configure either provider or providers, not both")
@@ -71,6 +78,9 @@ class LLMRuntime:
             raise LLMRuntimeError("token_budget must be an LLMTokenBudget")
         self.token_budget = token_budget
         self._usage_ledger = LLMUsageLedger()
+        if cache is not None and not isinstance(cache, LLMResponseCache):
+            raise LLMRuntimeError("cache must be an LLMResponseCache")
+        self.cache = cache
         self._uses_registry = providers is not None
 
         if self._uses_registry:
@@ -93,6 +103,21 @@ class LLMRuntime:
     def usage_snapshot(self) -> LLMUsageLedger:
         """Return an immutable snapshot of cumulative provider-reported usage."""
         return self._usage_ledger
+
+    def cache_snapshot(self) -> LLMCacheStats:
+        """Return immutable cache statistics, or zeros when no cache exists."""
+        return self.cache.stats() if self.cache is not None else LLMCacheStats()
+
+    def clear_cache(self) -> None:
+        """Clear cached responses and emit a safe event when a cache exists."""
+        if self.cache is None:
+            return
+        self.cache.clear()
+        self._emit_cache_event(
+            "llm.cache_cleared",
+            "LLM response cache cleared",
+            size=self.cache.stats().size,
+        )
 
     def chat(
         self,
@@ -146,6 +171,10 @@ class LLMRuntime:
         )
         provider_name = _provider_name(active_provider)
         self._check_request_budget(request)
+        cached_response = self._get_cached_response(request, provider_name)
+        if cached_response is not None:
+            self._emit_completed(cached_response)
+            return cached_response
         event_metadata = {"provider": provider_name, "model": request.model}
         self._emit(
             RuntimeEvent.info(
@@ -180,19 +209,8 @@ class LLMRuntime:
             raise LLMProviderError(f"LLM provider '{provider_name}' failed") from exc
 
         self._apply_response_usage(response)
-        completed_metadata = {
-            "provider": response.provider,
-            "model": response.model,
-            **_usage_metadata(response.usage),
-        }
-        self._emit(
-            RuntimeEvent.info(
-                "LLMRuntime",
-                "llm.completed",
-                f"LLM request completed with {response.provider}",
-                completed_metadata,
-            )
-        )
+        self._store_cached_response(request, provider_name, response)
+        self._emit_completed(response)
         return response
 
     def _chat_with_routing(
@@ -232,15 +250,6 @@ class LLMRuntime:
                 "success": True,
             },
         )
-        self._emit(
-            RuntimeEvent.info(
-                "LLMRuntime",
-                "llm.requested",
-                f"LLM request sent to {selected_name}",
-                {"provider": selected_name, "model": request.model},
-            )
-        )
-
         for attempt, provider_name in enumerate(attempts, start=1):
             if attempt > 1:
                 self._emit_routing_event(
@@ -253,6 +262,32 @@ class LLMRuntime:
                         "attempt": attempt,
                         "success": False,
                     },
+                )
+            cached_response = self._get_cached_response(request, provider_name)
+            if cached_response is not None:
+                if attempt > 1:
+                    self._emit_routing_event(
+                        "llm.fallback_succeeded",
+                        f"LLM fallback succeeded: {provider_name}",
+                        {
+                            "provider": selected_name,
+                            "fallback_provider": provider_name,
+                            "model": cached_response.model,
+                            "attempt": attempt,
+                            "success": True,
+                            "cached": True,
+                        },
+                    )
+                self._emit_completed(cached_response)
+                return cached_response
+            if attempt == 1:
+                self._emit(
+                    RuntimeEvent.info(
+                        "LLMRuntime",
+                        "llm.requested",
+                        f"LLM request sent to {selected_name}",
+                        {"provider": selected_name, "model": request.model},
+                    )
                 )
             try:
                 response = self._complete_with_retries(
@@ -308,6 +343,7 @@ class LLMRuntime:
                 ) from None
 
             self._apply_response_usage(response)
+            self._store_cached_response(request, provider_name, response)
             if attempt > 1:
                 self._emit_routing_event(
                     "llm.fallback_succeeded",
@@ -321,18 +357,7 @@ class LLMRuntime:
                         **_usage_metadata(response.usage),
                     },
                 )
-            self._emit(
-                RuntimeEvent.info(
-                    "LLMRuntime",
-                    "llm.completed",
-                    f"LLM request completed with {response.provider}",
-                    {
-                        "provider": response.provider,
-                        "model": response.model,
-                        **_usage_metadata(response.usage),
-                    },
-                )
-            )
+            self._emit_completed(response)
             return response
 
         self._emit_routing_event(
@@ -407,6 +432,96 @@ class LLMRuntime:
         )
         exceeded = check_token_budget(budget, self._usage_ledger)
         self._handle_budget_exceeded(exceeded)
+
+    def _get_cached_response(
+        self,
+        request: LLMRequest,
+        provider_name: str,
+    ) -> LLMResponse | None:
+        if not self._cache_enabled_for_request(request):
+            return None
+        cache = self.cache
+        if cache is None:
+            return None
+        key = build_llm_cache_key(request, provider_name)
+        self._emit_cache_event(
+            "llm.cache_checked",
+            f"LLM response cache checked for {provider_name}",
+            provider=provider_name,
+            model=request.model,
+            cache_key=key.short_hash,
+        )
+        response = cache.get(key)
+        if response is None:
+            self._emit_cache_event(
+                "llm.cache_miss",
+                f"LLM response cache miss for {provider_name}",
+                provider=provider_name,
+                model=request.model,
+                cache_key=key.short_hash,
+                hit=False,
+                size=cache.stats().size,
+            )
+            return None
+        metadata = dict(response.metadata)
+        metadata.update({"cached": True, "cache_key": key.short_hash})
+        cached_response = copy_llm_response(response, metadata=metadata)
+        self._emit_cache_event(
+            "llm.cache_hit",
+            f"LLM response cache hit for {provider_name}",
+            provider=provider_name,
+            model=request.model,
+            cache_key=key.short_hash,
+            hit=True,
+            size=cache.stats().size,
+        )
+        return cached_response
+
+    def _store_cached_response(
+        self,
+        request: LLMRequest,
+        provider_name: str,
+        response: LLMResponse,
+    ) -> None:
+        if not self._cache_enabled_for_request(request):
+            return
+        cache = self.cache
+        if cache is None:
+            return
+        key = build_llm_cache_key(request, provider_name)
+        cache.set(key, response)
+        self._emit_cache_event(
+            "llm.cache_stored",
+            f"LLM response cached for {provider_name}",
+            provider=provider_name,
+            model=request.model,
+            cache_key=key.short_hash,
+            size=cache.stats().size,
+        )
+
+    def _cache_enabled_for_request(self, request: LLMRequest) -> bool:
+        cache = self.cache
+        if cache is None or not cache.enabled:
+            return False
+        return _request_cache_enabled(request.metadata)
+
+    def _emit_completed(self, response: LLMResponse) -> None:
+        metadata: dict[str, Any] = {
+            "provider": response.provider,
+            "model": response.model,
+        }
+        if response.metadata.get("cached") is True:
+            metadata["cached"] = True
+        else:
+            metadata.update(_usage_metadata(response.usage))
+        self._emit(
+            RuntimeEvent.info(
+                "LLMRuntime",
+                "llm.completed",
+                f"LLM request completed with {response.provider}",
+                metadata,
+            )
+        )
 
     def _handle_budget_exceeded(self, exceeded: tuple[str, ...]) -> None:
         if not exceeded:
@@ -565,6 +680,14 @@ class LLMRuntime:
         factory = RuntimeEvent.error if error else RuntimeEvent.info
         self._emit(factory("LLMRuntime", event_type, message, metadata))
 
+    def _emit_cache_event(
+        self,
+        event_type: str,
+        message: str,
+        **metadata: Any,
+    ) -> None:
+        self._emit(RuntimeEvent.info("LLMRuntime", event_type, message, metadata))
+
     def _emit(self, event: RuntimeEvent) -> None:
         if self.event_sink is None:
             return
@@ -671,6 +794,14 @@ def _request_max_tokens(metadata: Mapping[str, Any]) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         return None
     return value
+
+
+def _request_cache_enabled(metadata: Mapping[str, Any]) -> bool:
+    value = metadata.get("cache")
+    options = metadata.get("options")
+    if value is None and isinstance(options, Mapping):
+        value = options.get("cache")
+    return value is not False
 
 
 def _budget_name(budget: LLMTokenBudget) -> str:
