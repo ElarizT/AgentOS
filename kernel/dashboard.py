@@ -14,6 +14,7 @@ from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
 from kernel.dependency_graph import build_dependency_graph, render_dependency_graph
 from kernel.events import RuntimeEvent, render_runtime_event
 from kernel.ipc_inspector import build_ipc_snapshot, render_ipc_inspector
+from kernel.llm_stream_monitor import build_llm_stream_snapshot, render_llm_stream_snapshot
 from kernel.metrics import build_agent_metrics_snapshot, render_agent_metrics
 from kernel.replay import build_replay_session, render_replay_session
 from kernel.timeline import render_runtime_timeline
@@ -58,7 +59,7 @@ class AgentOSDashboard(App[None]):
         layout: grid;
         grid-size: 2 3;
         grid-columns: 1fr 1fr;
-        grid-rows: 1fr 2fr 3fr;
+        grid-rows: 1fr 4fr 3fr;
         height: 1fr;
     }
 
@@ -99,6 +100,12 @@ class AgentOSDashboard(App[None]):
         text-style: bold;
     }
 
+    #llm-stream-title {
+        height: 1;
+        color: #8bd5ff;
+        text-style: bold;
+    }
+
     #ipc-table {
         height: 1fr;
     }
@@ -112,6 +119,11 @@ class AgentOSDashboard(App[None]):
     #wasm-log {
         height: 1fr;
         background: #080b0f;
+        overflow: auto;
+    }
+
+    #llm-stream-monitor {
+        height: 4;
         overflow: auto;
     }
 
@@ -201,6 +213,7 @@ class AgentOSDashboard(App[None]):
         self._ipc_inspector_signature: tuple[str, ...] | None = None
         self._replay_signature: tuple[str, ...] | None = None
         self._dependency_graph_signature: tuple[str, ...] | None = None
+        self._llm_stream_signature: tuple[str, ...] | None = None
         self._wasm_placeholder_logged = False
 
     def load_research_team_snapshot(self, state: dict[str, Any]) -> None:
@@ -313,6 +326,8 @@ class AgentOSDashboard(App[None]):
             with Vertical(id="wasm-pane", classes="pane"):
                 yield Static("Execution / WASM Isolation Monitor", classes="pane-title")
                 yield RichLog(id="wasm-log", markup=True, wrap=True, highlight=True, auto_scroll=False)
+                yield Static("LLM Stream Monitor", id="llm-stream-title")
+                yield Static(id="llm-stream-monitor")
             with Vertical(id="agent-tree-pane", classes="pane"):
                 yield Static("Agent Tree View", classes="pane-title")
                 yield Static(id="agent-tree")
@@ -378,6 +393,7 @@ class AgentOSDashboard(App[None]):
         self._render_wasm_log(wasm_runs)
         self._render_supervision_events()
         self._render_runtime_events()
+        self._render_llm_stream_monitor()
         self._render_timeline()
         self._render_replay()
         self.run_worker(self._refresh_process_rows(), exclusive=True, group="process-refresh")
@@ -564,6 +580,15 @@ class AgentOSDashboard(App[None]):
         self._replay_signature = signature
         content = "\n".join(rows) if rows else "[dim]No replay data available.[/]"
         self._update_scrollable_static_follow_end("#execution-replay", content)
+
+    def _render_llm_stream_monitor(self) -> None:
+        snapshot = build_llm_stream_snapshot(self._observable_events())
+        rows = render_llm_stream_snapshot(snapshot)
+        signature = tuple(rows)
+        if signature == self._llm_stream_signature:
+            return
+        self._llm_stream_signature = signature
+        self._update_scrollable_static_follow_end("#llm-stream-monitor", "\n".join(rows))
 
     def _observable_events(self) -> list[Any]:
         events: list[Any] = []

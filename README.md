@@ -342,3 +342,9 @@ the response cache for now and never caches partial chunks. Provider-reported
 usage is counted once when final usage is available after stream completion.
 The OpenAI-compatible adapter remains completion-only in Step 30 and fails
 streaming requests with a clean unsupported-streaming error.
+
+Step 31 adds an LLM Stream Monitor dashboard panel for safe streaming
+observability. The monitor is built entirely from safe Step 30 RuntimeEvents and
+shows provider, model, status, chunk and character counts, usage, and sanitized
+errors. Streamed text and prompts are not displayed by default. The panel is
+useful for live debugging and demos while preserving dashboard scroll behavior.
